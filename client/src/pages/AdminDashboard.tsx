@@ -1,386 +1,248 @@
-import { useState, useEffect } from 'react';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { LogOut, Trash2, Edit2 } from 'lucide-react';
-import { useLocation } from 'wouter';
-import { toast } from 'sonner';
-import { trpc } from '@/lib/trpc';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
+import React, { useState } from "react";
+import { trpc } from "../lib/trpc";
+import { useLocation } from "wouter";
 
-interface Student {
-  id: number;
-  studentName: string;
+interface StudentForm {
+  id?: string;
+  name: string;
   username: string;
-  initialQuota: number;
-  remainingQuota: number;
+  password: string;
+  totalLimit: number;
+  remainingLimit: number;
 }
 
 export default function AdminDashboard() {
   const [, setLocation] = useLocation();
-  const [students, setStudents] = useState<Student[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [showAddDialog, setShowAddDialog] = useState(false);
-  const [showEditDialog, setShowEditDialog] = useState(false);
-  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
-  const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
+  const utils = trpc.useContext();
 
-  const [formData, setFormData] = useState({
-    studentName: '',
-    username: '',
-    password: '',
-    quota: 20,
+  const { data: students = [], isLoading } = trpc.getStudents.useQuery();
+
+  const [form, setForm] = useState<StudentForm | null>(null);
+
+  const saveMutation = trpc.saveStudent.useMutation({
+    onSuccess: () => {
+      utils.getStudents.invalidate();
+      setForm(null);
+    },
   });
 
-  const [editQuota, setEditQuota] = useState(20);
-
-  const createStudentMutation = trpc.admin.createStudent.useMutation();
-  const updateQuotaMutation = trpc.admin.updateStudentQuota.useMutation();
-  const deleteStudentMutation = trpc.admin.deleteStudent.useMutation();
-
-  useEffect(() => {
-    const isAdmin = localStorage.getItem('adminLoggedIn');
-    if (!isAdmin) {
-      setLocation('/login');
-      return;
-    }
-
-    loadStudents();
-  }, [setLocation]);
-
-  const loadStudents = async () => {
-    setIsLoading(true);
-    try {
-      const utils = trpc.useUtils();
-      const result = await utils.admin.getStudents.fetch();
-      setStudents(result);
-    } catch (error) {
-      toast.error('載入學生列表失敗');
-    } finally {
-      setIsLoading(false);
-    }
-  };
+  const deleteMutation = trpc.deleteStudent.useMutation({
+    onSuccess: () => {
+      utils.getStudents.invalidate();
+    },
+  });
 
   const handleLogout = () => {
-    localStorage.removeItem('userRole');
-    localStorage.removeItem('adminLoggedIn');
-    toast.success('已登出');
-    setLocation('/login');
+    localStorage.removeItem("user");
+    setLocation("/");
   };
 
-  const handleAddStudent = async () => {
-    if (!formData.studentName || !formData.username || !formData.password) {
-      toast.error('請填寫所有欄位');
-      return;
-    }
-
-    try {
-      await createStudentMutation.mutateAsync({
-        studentName: formData.studentName,
-        username: formData.username,
-        password: formData.password,
-        quota: formData.quota,
-      });
-
-      toast.success('學生已新增');
-      setFormData({ studentName: '', username: '', password: '', quota: 20 });
-      setShowAddDialog(false);
-      await loadStudents();
-    } catch (error) {
-      toast.error('新增學生失敗');
-    }
+  const handleStartCreate = () => {
+    setForm({
+      name: "",
+      username: "",
+      password: "",
+      totalLimit: 5,
+      remainingLimit: 5,
+    });
   };
 
-  const handleUpdateQuota = async () => {
-    if (!selectedStudent) return;
-
-    try {
-      await updateQuotaMutation.mutateAsync({
-        studentId: selectedStudent.id,
-        newQuota: editQuota,
-      });
-
-      toast.success('額度已更新');
-      setShowEditDialog(false);
-      await loadStudents();
-    } catch (error) {
-      toast.error('更新額度失敗');
-    }
+  const handleStartEdit = (student: any) => {
+    setForm({
+      id: student.id,
+      name: student.name,
+      username: student.username,
+      password: student.password,
+      totalLimit: student.totalLimit,
+      remainingLimit: student.remainingLimit,
+    });
   };
 
-  const handleDeleteStudent = async () => {
-    if (!selectedStudent) return;
-
-    try {
-      await deleteStudentMutation.mutateAsync({
-        studentId: selectedStudent.id,
-      });
-
-      toast.success('學生已刪除');
-      setShowDeleteDialog(false);
-      await loadStudents();
-    } catch (error) {
-      toast.error('刪除學生失敗');
-    }
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!form) return;
+    saveMutation.mutate(form);
   };
-
-  if (isLoading) {
-    return <div className="flex items-center justify-center min-h-screen">載入中...</div>;
-  }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-950 dark:to-slate-900">
-      <header className="sticky top-0 z-40 bg-white/80 dark:bg-slate-950/80 backdrop-blur-md border-b border-slate-200 dark:border-slate-800">
-        <div className="container max-w-6xl mx-auto px-4 py-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <h1 className="text-2xl font-bold text-slate-900 dark:text-white">
-                管理員後台
-              </h1>
-              <p className="text-slate-600 dark:text-slate-400 mt-1">
-                共 {students.length} 名學生
-              </p>
-            </div>
-            <Button
-              onClick={handleLogout}
-              variant="outline"
-              size="sm"
-              className="gap-2"
-            >
-              <LogOut className="w-4 h-4" />
-              登出
-            </Button>
-          </div>
+    <div className="min-h-screen bg-slate-50">
+      <header className="bg-white border-b border-slate-200 px-8 py-4 flex justify-between items-center">
+        <div className="flex items-center space-x-3">
+          <span className="bg-indigo-600 text-white text-xs px-2.5 py-1 rounded font-bold">Admin</span>
+          <h1 className="text-xl font-bold text-slate-800">學生閱讀權限與篇數管理控制台</h1>
         </div>
+        <button
+          onClick={handleLogout}
+          className="bg-slate-100 hover:bg-slate-200 text-slate-600 px-4 py-2 rounded-lg text-sm font-medium transition"
+        >
+          登出系統
+        </button>
       </header>
 
-      <main className="container max-w-6xl mx-auto px-4 py-12">
-        <Card className="border-slate-200 dark:border-slate-700">
-          <CardHeader className="bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-slate-800 dark:to-slate-700 border-b border-slate-200 dark:border-slate-600">
-            <div className="flex items-center justify-between">
-              <CardTitle>學生管理</CardTitle>
-              <Dialog open={showAddDialog} onOpenChange={setShowAddDialog}>
-                <DialogTrigger asChild>
-                  <Button>新增學生</Button>
-                </DialogTrigger>
-                <DialogContent>
-                  <DialogHeader>
-                    <DialogTitle>新增學生</DialogTitle>
-                    <DialogDescription>
-                      請填寫學生的基本資訊
-                    </DialogDescription>
-                  </DialogHeader>
-                  <div className="space-y-4">
-                    <div>
-                      <Label htmlFor="studentName">學生名稱</Label>
-                      <Input
-                        id="studentName"
-                        value={formData.studentName}
-                        onChange={(e) =>
-                          setFormData({ ...formData, studentName: e.target.value })
-                        }
-                        placeholder="例：張三"
-                      />
-                    </div>
-                    <div>
-                      <Label htmlFor="username">帳號</Label>
-                      <Input
-                        id="username"
-                        value={formData.username}
-                        onChange={(e) =>
-                          setFormData({ ...formData, username: e.target.value })
-                        }
-                        placeholder="例：student001"
-                      />
-                    </div>
-                    <div>
-                      <Label htmlFor="password">密碼</Label>
-                      <Input
-                        id="password"
-                        type="password"
-                        value={formData.password}
-                        onChange={(e) =>
-                          setFormData({ ...formData, password: e.target.value })
-                        }
-                        placeholder="密碼"
-                      />
-                    </div>
-                    <div>
-                      <Label htmlFor="quota">初始額度</Label>
-                      <Input
-                        id="quota"
-                        type="number"
-                        value={formData.quota}
-                        onChange={(e) =>
-                          setFormData({ ...formData, quota: parseInt(e.target.value) })
-                        }
-                        placeholder="20"
-                      />
-                    </div>
-                    <Button onClick={handleAddStudent} className="w-full">
-                      新增
-                    </Button>
-                  </div>
-                </DialogContent>
-              </Dialog>
+      <main className="max-w-7xl mx-auto p-8">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+          {/* 左側清單 */}
+          <div className="lg:col-span-2 bg-white rounded-xl shadow-sm border border-slate-200 p-6">
+            <div className="flex justify-between items-center mb-6">
+              <h2 className="text-lg font-bold text-slate-800">學生帳號清單</h2>
+              <button
+                onClick={handleStartCreate}
+                className="bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium px-4 py-2 rounded-lg transition"
+              >
+                + 新增學生
+              </button>
             </div>
-          </CardHeader>
 
-          <CardContent className="pt-6">
-            {students.length === 0 ? (
-              <div className="text-center py-12">
-                <p className="text-slate-600 dark:text-slate-400">
-                  還沒有學生，點擊「新增學生」開始添加
-                </p>
-              </div>
+            {isLoading ? (
+              <p className="text-slate-400 py-8 text-center">載入學生資料中...</p>
             ) : (
               <div className="overflow-x-auto">
-                <table className="w-full">
+                <table className="w-full text-left border-collapse">
                   <thead>
-                    <tr className="border-b border-slate-200 dark:border-slate-700">
-                      <th className="text-left py-3 px-4 font-semibold text-slate-900 dark:text-white">
-                        學生名稱
-                      </th>
-                      <th className="text-left py-3 px-4 font-semibold text-slate-900 dark:text-white">
-                        帳號
-                      </th>
-                      <th className="text-left py-3 px-4 font-semibold text-slate-900 dark:text-white">
-                        初始額度
-                      </th>
-                      <th className="text-left py-3 px-4 font-semibold text-slate-900 dark:text-white">
-                        剩餘額度
-                      </th>
-                      <th className="text-left py-3 px-4 font-semibold text-slate-900 dark:text-white">
-                        操作
-                      </th>
+                    <tr className="border-b border-slate-200 bg-slate-50 text-slate-500 text-xs font-semibold uppercase">
+                      <th className="py-3 px-4">學生姓名</th>
+                      <th className="py-3 px-4">帳號</th>
+                      <th className="py-3 px-4">密碼</th>
+                      <th className="py-3 px-4 text-center">總篇數</th>
+                      <th className="py-3 px-4 text-center">剩餘篇數</th>
+                      <th className="py-3 px-4 text-center">操作</th>
                     </tr>
                   </thead>
-                  <tbody>
-                    {students.map((student) => (
-                      <tr
-                        key={student.id}
-                        className="border-b border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800/50"
-                      >
-                        <td className="py-3 px-4 text-slate-900 dark:text-white">
-                          {student.studentName}
+                  <tbody className="divide-y divide-slate-100 text-sm text-slate-700">
+                    {students.map((student: any) => (
+                      <tr key={student.id} className="hover:bg-slate-50 transition">
+                        <td className="py-3.5 px-4 font-medium">{student.name}</td>
+                        <td className="py-3.5 px-4">{student.username}</td>
+                        <td className="py-3.5 px-4 font-mono text-slate-400">{student.password}</td>
+                        <td className="py-3.5 px-4 text-center">{student.totalLimit}</td>
+                        <td className="py-3.5 px-4 text-center font-bold text-indigo-600">
+                          {student.remainingLimit}
                         </td>
-                        <td className="py-3 px-4 text-slate-600 dark:text-slate-400">
-                          {student.username}
-                        </td>
-                        <td className="py-3 px-4 text-slate-600 dark:text-slate-400">
-                          {student.initialQuota}
-                        </td>
-                        <td className="py-3 px-4">
-                          <span
-                            className={`font-bold ${
-                              student.remainingQuota > 0
-                                ? 'text-green-600 dark:text-green-400'
-                                : 'text-red-600 dark:text-red-400'
-                            }`}
+                        <td className="py-3.5 px-4 text-center space-x-2">
+                          <button
+                            onClick={() => handleStartEdit(student)}
+                            className="text-indigo-600 hover:text-indigo-800 font-medium text-xs px-2 py-1 rounded bg-indigo-50"
                           >
-                            {student.remainingQuota}
-                          </span>
-                        </td>
-                        <td className="py-3 px-4">
-                          <div className="flex gap-2">
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => {
-                                setSelectedStudent(student);
-                                setEditQuota(student.remainingQuota);
-                                setShowEditDialog(true);
-                              }}
-                              className="gap-1"
-                            >
-                              <Edit2 className="w-4 h-4" />
-                              編輯
-                            </Button>
-
-                            <Button
-                              size="sm"
-                              variant="destructive"
-                              onClick={() => {
-                                setSelectedStudent(student);
-                                setShowDeleteDialog(true);
-                              }}
-                              className="gap-1"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                              刪除
-                            </Button>
-                          </div>
+                            編輯
+                          </button>
+                          <button
+                            onClick={() => {
+                              if (confirm(`確定要刪除學生「${student.name}」嗎？`)) {
+                                deleteMutation.mutate({ id: student.id });
+                              }
+                            }}
+                            className="text-red-600 hover:text-red-800 font-medium text-xs px-2 py-1 rounded bg-red-50"
+                          >
+                            刪除
+                          </button>
                         </td>
                       </tr>
                     ))}
+                    {students.length === 0 && (
+                      <tr>
+                        <td colSpan={6} className="text-center py-8 text-slate-400">
+                          目前沒有學生帳號，請點擊右上角新增。
+                        </td>
+                      </tr>
+                    )}
                   </tbody>
                 </table>
               </div>
             )}
-          </CardContent>
-        </Card>
+          </div>
+
+          {/* 右側表單 */}
+          <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 h-fit">
+            <h2 className="text-lg font-bold text-slate-800 mb-6">
+              {form ? (form.id ? "編輯學生設定" : "新增學生帳號") : "學生設定面板"}
+            </h2>
+
+            {form ? (
+              <form onSubmit={handleSubmit} className="space-y-4">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-600 mb-1">學生姓名</label>
+                  <input
+                    type="text"
+                    required
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
+                    value={form.name}
+                    onChange={(e) => setForm({ ...form, name: e.target.value })}
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-600 mb-1">登入帳號</label>
+                  <input
+                    type="text"
+                    required
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
+                    value={form.username}
+                    onChange={(e) => setForm({ ...form, username: e.target.value })}
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-600 mb-1">登入密碼</label>
+                  <input
+                    type="text"
+                    required
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
+                    value={form.password}
+                    onChange={(e) => setForm({ ...form, password: e.target.value })}
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-600 mb-1">可用總篇數</label>
+                    <input
+                      type="number"
+                      min="0"
+                      required
+                      className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
+                      value={form.totalLimit}
+                      onChange={(e) => setForm({ ...form, totalLimit: parseInt(e.target.value) || 0 })}
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-600 mb-1">剩餘篇數</label>
+                    <input
+                      type="number"
+                      min="0"
+                      required
+                      className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
+                      value={form.remainingLimit}
+                      onChange={(e) => setForm({ ...form, remainingLimit: parseInt(e.target.value) || 0 })}
+                    />
+                  </div>
+                </div>
+
+                <div className="flex space-x-3 pt-4">
+                  <button
+                    type="submit"
+                    disabled={saveMutation.isLoading}
+                    className="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-2 rounded-lg text-sm transition"
+                  >
+                    {saveMutation.isLoading ? "儲存中..." : "儲存設定"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setForm(null)}
+                    className="bg-slate-100 hover:bg-slate-200 text-slate-600 font-medium px-4 py-2 rounded-lg text-sm transition"
+                  >
+                    取消
+                  </button>
+                </div>
+              </form>
+            ) : (
+              <p className="text-slate-400 text-sm text-center py-12">
+                請選擇左側的學生進行編輯，或點選「+ 新增學生」。
+              </p>
+            )}
+          </div>
+        </div>
       </main>
-
-      <Dialog open={showEditDialog} onOpenChange={setShowEditDialog}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>修改額度</DialogTitle>
-            <DialogDescription>
-              {selectedStudent?.studentName} 的剩餘額度
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div>
-              <Label htmlFor="editQuota">新額度</Label>
-              <Input
-                id="editQuota"
-                type="number"
-                value={editQuota}
-                onChange={(e) =>
-                  setEditQuota(parseInt(e.target.value))
-                }
-              />
-            </div>
-            <Button onClick={handleUpdateQuota} className="w-full">
-              更新
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>確認刪除？</AlertDialogTitle>
-            <AlertDialogDescription>
-              確定要刪除 {selectedStudent?.studentName}？此操作無法復原。
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <div className="flex gap-3">
-            <AlertDialogCancel>取消</AlertDialogCancel>
-            <AlertDialogAction onClick={handleDeleteStudent} className="bg-red-600 hover:bg-red-700">
-              刪除
-            </AlertDialogAction>
-          </div>
-        </AlertDialogContent>
-      </AlertDialog>
     </div>
   );
 }
