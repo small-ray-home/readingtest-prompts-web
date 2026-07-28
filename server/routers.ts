@@ -1,262 +1,162 @@
-import { COOKIE_NAME } from "@shared/const";
-import { getSessionCookieOptions } from "./_core/cookies";
-import { systemRouter } from "./_core/systemRouter";
-import { publicProcedure, router, protectedProcedure } from "./_core/trpc";
+import { router, publicProcedure } from "./_core/trpc";
 import { z } from "zod";
-import { getDb } from "./db";
-import { students, usageLog } from "../drizzle/schema";
+import { db } from "./db";
+import { users, articles } from "../drizzle/schema";
 import { eq } from "drizzle-orm";
-import * as bcrypt from "bcrypt";
+import { TRPCError } from "@trpc/server";
+import { v4 as uuidv4 } from "uuid";
 
 export const appRouter = router({
-  system: systemRouter,
-  auth: router({
-    me: publicProcedure.query(opts => opts.ctx.user),
-    logout: publicProcedure.mutation(({ ctx }) => {
-      const cookieOptions = getSessionCookieOptions(ctx.req);
-      ctx.res.clearCookie(COOKIE_NAME, { ...cookieOptions, maxAge: -1 });
-      return {
-        success: true,
-      } as const;
+  // 1. 登入邏輯
+  login: publicProcedure
+    .input(
+      z.object({
+        username: z.string(),
+        password: z.string(),
+      })
+    )
+    .mutation(async ({ input }) => {
+      // 預設管理員驗證
+      if (input.username === "admin" && input.password === "readingadmin") {
+        return {
+          user: {
+            id: "admin-id",
+            name: "系統管理員",
+            username: "admin",
+            password: "readingadmin",
+            role: "admin" as const,
+            totalLimit: 0,
+            remainingLimit: 0,
+          },
+        };
+      }
+
+      // 學生驗證
+      const foundUser = await db
+        .select()
+        .from(users)
+        .where(eq(users.username, input.username))
+        .limit(1);
+
+      if (!foundUser.length || foundUser[0].password !== input.password) {
+        throw new TRPCError({
+          code: "UNAUTHORIZED",
+          message: "帳號或密碼錯誤！",
+        });
+      }
+
+      return { user: foundUser[0] };
     }),
-    
-    // Admin login with hardcoded credentials
-    adminLogin: publicProcedure
-      .input(z.object({
-        username: z.string(),
-        password: z.string(),
-      }))
-      .mutation(async ({ input }) => {
-        const ADMIN_USERNAME = "admin";
-        const ADMIN_PASSWORD = "readingadmin";
-        
-        if (input.username === ADMIN_USERNAME && input.password === ADMIN_PASSWORD) {
-          return {
-            success: true,
-            role: "admin",
-            message: "Admin login successful",
-          };
-        }
-        
-        throw new Error("Invalid admin credentials");
-      }),
-    
-    // Student login
-    studentLogin: publicProcedure
-      .input(z.object({
-        username: z.string(),
-        password: z.string(),
-      }))
-      .mutation(async ({ input }) => {
-        const db = await getDb();
-        if (!db) throw new Error("Database not available");
-        
-        const result = await db
-          .select()
-          .from(students)
-          .where(eq(students.username, input.username))
-          .limit(1);
-        
-        if (result.length === 0) {
-          throw new Error("Student not found");
-        }
-        
-        const student = result[0];
-        const passwordMatch = await bcrypt.compare(input.password, student.passwordHash);
-        
-        if (!passwordMatch) {
-          throw new Error("Invalid password");
-        }
-        
-        return {
-          success: true,
-          role: "student",
-          studentId: student.id,
-          studentName: student.studentName,
-          remainingQuota: student.remainingQuota,
-          message: "Student login successful",
-        };
-      }),
+
+  // 2. 取得所有學生清單
+  getStudents: publicProcedure.query(async () => {
+    return await db.select().from(users).where(eq(users.role, "student"));
   }),
 
-  // Admin procedures
-  admin: router({
-    // Get all students
-    getStudents: protectedProcedure
-      .query(async ({ ctx }) => {
-        if (ctx.user?.role !== "admin") {
-          throw new Error("Unauthorized");
-        }
-        
-        const db = await getDb();
-        if (!db) throw new Error("Database not available");
-        
-        return await db.select().from(students);
-      }),
-    
-    // Create new student
-    createStudent: protectedProcedure
-      .input(z.object({
-        studentName: z.string(),
-        username: z.string(),
-        password: z.string(),
-        quota: z.number().default(20),
-      }))
-      .mutation(async ({ input, ctx }) => {
-        if (ctx.user?.role !== "admin") {
-          throw new Error("Unauthorized");
-        }
-        
-        const db = await getDb();
-        if (!db) throw new Error("Database not available");
-        
-        const hashedPassword = await bcrypt.hash(input.password, 10);
-        
-        await db.insert(students).values({
-          userId: ctx.user.id,
-          studentName: input.studentName,
-          username: input.username,
-          passwordHash: hashedPassword,
-          initialQuota: input.quota,
-          remainingQuota: input.quota,
-        });
-        
-        return { success: true };
-      }),
-    
-    // Update student quota
-    updateStudentQuota: protectedProcedure
-      .input(z.object({
-        studentId: z.number(),
-        newQuota: z.number(),
-      }))
-      .mutation(async ({ input, ctx }) => {
-        if (ctx.user?.role !== "admin") {
-          throw new Error("Unauthorized");
-        }
-        
-        const db = await getDb();
-        if (!db) throw new Error("Database not available");
-        
-        await db
-          .update(students)
-          .set({ remainingQuota: input.newQuota })
-          .where(eq(students.id, input.studentId));
-        
-        return { success: true };
-      }),
-    
-    // Delete student
-    deleteStudent: protectedProcedure
-      .input(z.object({
-        studentId: z.number(),
-      }))
-      .mutation(async ({ input, ctx }) => {
-        if (ctx.user?.role !== "admin") {
-          throw new Error("Unauthorized");
-        }
-        
-        const db = await getDb();
-        if (!db) throw new Error("Database not available");
-        
-        // Delete usage logs first
-        await db.delete(usageLog).where(eq(usageLog.studentId, input.studentId));
-        
-        // Then delete student
-        await db.delete(students).where(eq(students.id, input.studentId));
-        
-        return { success: true };
-      }),
+  // 3. 新增/更新學生資訊（名稱、帳號、密碼、可用篇數、剩餘篇數）
+  saveStudent: publicProcedure
+    .input(
+      z.object({
+        id: z.string().optional(),
+        name: z.string().min(1, "請輸入姓名"),
+        username: z.string().min(1, "請輸入帳號"),
+        password: z.string().min(1, "請輸入密碼"),
+        totalLimit: z.number().min(0),
+        remainingLimit: z.number().min(0),
+      })
+    )
+    .mutation(async ({ input }) => {
+      if (input.id) {
+        const updated = await db
+          .update(users)
+          .set({
+            name: input.name,
+            username: input.username,
+            password: input.password,
+            totalLimit: input.totalLimit,
+            remainingLimit: input.remainingLimit,
+          })
+          .where(eq(users.id, input.id))
+          .returning();
+        return updated[0];
+      } else {
+        const newStudent = await db
+          .insert(users)
+          .values({
+            id: uuidv4(),
+            name: input.name,
+            username: input.username,
+            password: input.password,
+            role: "student",
+            totalLimit: input.totalLimit,
+            remainingLimit: input.remainingLimit,
+          })
+          .returning();
+        return newStudent[0];
+      }
+    }),
+
+  // 4. 刪除學生
+  deleteStudent: publicProcedure
+    .input(z.object({ id: z.string() }))
+    .mutation(async ({ input }) => {
+      await db.delete(users).where(eq(users.id, input.id));
+      return { success: true };
+    }),
+
+  // 5. 取得提示與文章清單
+  getArticles: publicProcedure.query(async () => {
+    return await db.select().from(articles);
   }),
 
-  // Student procedures
-  student: router({
-    // Get student info
-    getInfo: publicProcedure
-      .input(z.object({
-        studentId: z.number(),
-      }))
-      .query(async ({ input }) => {
-        const db = await getDb();
-        if (!db) throw new Error("Database not available");
-        
-        const result = await db
-          .select()
-          .from(students)
-          .where(eq(students.id, input.studentId))
-          .limit(1);
-        
-        if (result.length === 0) {
-          throw new Error("Student not found");
-        }
-        
-        return result[0];
-      }),
-    
-    // View article (deduct quota)
-    viewArticle: publicProcedure
-      .input(z.object({
-        studentId: z.number(),
-        articleId: z.number(),
-        articleTitle: z.string(),
-      }))
-      .mutation(async ({ input }) => {
-        const db = await getDb();
-        if (!db) throw new Error("Database not available");
-        
-        // Get student
-        const studentResult = await db
-          .select()
-          .from(students)
-          .where(eq(students.id, input.studentId))
-          .limit(1);
-        
-        if (studentResult.length === 0) {
-          throw new Error("Student not found");
-        }
-        
-        const student = studentResult[0];
-        
-        // Check if quota available
-        if (student.remainingQuota <= 0) {
-          throw new Error("No remaining quota");
-        }
-        
-        // Deduct quota
-        const newQuota = student.remainingQuota - 1;
-        await db
-          .update(students)
-          .set({ remainingQuota: newQuota })
-          .where(eq(students.id, input.studentId));
-        
-        // Log usage
-        await db.insert(usageLog).values({
-          studentId: input.studentId,
-          articleId: input.articleId,
-          articleTitle: input.articleTitle,
+  // 6. 學生選擇文章，並減少 1 篇額度
+  deductAndReadArticle: publicProcedure
+    .input(
+      z.object({
+        studentId: z.string(),
+        articleId: z.string(),
+      })
+    )
+    .mutation(async ({ input }) => {
+      const studentList = await db
+        .select()
+        .from(users)
+        .where(eq(users.id, input.studentId))
+        .limit(1);
+
+      if (!studentList.length) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "找不到該學生資訊" });
+      }
+
+      const student = studentList[0];
+      if (student.remainingLimit <= 0) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "您的剩餘篇數不足，無法觀看提示！",
         });
-        
-        return {
-          success: true,
-          remainingQuota: newQuota,
-        };
-      }),
-    
-    // Get usage history
-    getUsageHistory: publicProcedure
-      .input(z.object({
-        studentId: z.number(),
-      }))
-      .query(async ({ input }) => {
-        const db = await getDb();
-        if (!db) throw new Error("Database not available");
-        
-        return await db
-          .select()
-          .from(usageLog)
-          .where(eq(usageLog.studentId, input.studentId));
-      }),
-  }),
+      }
+
+      // 扣除 1 篇額度
+      const updatedStudent = await db
+        .update(users)
+        .set({
+          remainingLimit: student.remainingLimit - 1,
+        })
+        .where(eq(users.id, input.studentId))
+        .returning();
+
+      // 取得文章內容
+      const articleList = await db
+        .select()
+        .from(articles)
+        .where(eq(articles.id, input.articleId))
+        .limit(1);
+
+      return {
+        updatedStudent: updatedStudent[0],
+        article: articleList[0],
+      };
+    }),
 });
 
 export type AppRouter = typeof appRouter;
