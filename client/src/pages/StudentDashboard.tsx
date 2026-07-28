@@ -1,236 +1,154 @@
-import { useState, useEffect } from 'react';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { ChevronRight, LogOut } from 'lucide-react';
-import { useLocation } from 'wouter';
-import { toast } from 'sonner';
-import articles from '@/data/articles.json';
-import { trpc } from '@/lib/trpc';
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
+import React, { useState, useEffect } from "react";
+import { trpc } from "../lib/trpc";
+import { useLocation } from "wouter";
 
 export default function StudentDashboard() {
   const [, setLocation] = useLocation();
-  const [studentId, setStudentId] = useState<number | null>(null);
-  const [studentName, setStudentName] = useState('');
-  const [remainingQuota, setRemainingQuota] = useState(0);
-  const [selectedArticle, setSelectedArticle] = useState<typeof articles[0] | null>(null);
-  const [showConfirmDialog, setShowConfirmDialog] = useState(false);
-  const [isLoading, setIsLoading] = useState(false);
-
-  const viewArticleMutation = trpc.student.viewArticle.useMutation();
+  const [user, setUser] = useState<any>(null);
+  const [selectedArticle, setSelectedArticle] = useState<any>(null);
 
   useEffect(() => {
-    // Get student info from localStorage
-    const id = localStorage.getItem('studentId');
-    const name = localStorage.getItem('studentName');
-    const quota = localStorage.getItem('remainingQuota');
-
-    if (!id || !name || quota === null) {
-      setLocation('/login');
+    const storedUser = localStorage.getItem("user");
+    if (!storedUser) {
+      setLocation("/");
       return;
     }
-
-    setStudentId(parseInt(id));
-    setStudentName(name);
-    setRemainingQuota(parseInt(quota));
+    setUser(JSON.parse(storedUser));
   }, [setLocation]);
 
+  const { data: articles = [], isLoading } = trpc.getArticles.useQuery();
+
+  const deductMutation = trpc.deductAndReadArticle.useMutation({
+    onSuccess: (data) => {
+      // 成功扣除額度後，即時更新 state 與 localStorage 狀態
+      setUser(data.updatedStudent);
+      localStorage.setItem("user", JSON.stringify(data.updatedStudent));
+      // 載入該篇文章內容
+      setSelectedArticle(data.article);
+    },
+    onError: (err) => {
+      alert(err.message || "扣除額度失敗，請重新嘗試！");
+    },
+  });
+
   const handleLogout = () => {
-    localStorage.removeItem('userRole');
-    localStorage.removeItem('studentId');
-    localStorage.removeItem('studentName');
-    localStorage.removeItem('remainingQuota');
-    toast.success('已登出');
-    setLocation('/login');
+    localStorage.removeItem("user");
+    setLocation("/");
   };
 
-  const handleViewArticle = (article: typeof articles[0]) => {
-    if (remainingQuota <= 0) {
-      toast.error('您已用完所有額度');
+  const handleSelectArticle = (article: any) => {
+    if (!user) return;
+
+    if (user.remainingLimit <= 0) {
+      alert("您的剩餘篇數已用完，無法繼續觀看提示！");
       return;
     }
-    setSelectedArticle(article);
-    setShowConfirmDialog(true);
-  };
 
-  const handleConfirmView = async () => {
-    if (!selectedArticle || !studentId) return;
+    // 跳出彈窗詢問是否使用
+    const confirmUse = window.confirm(
+      `進入此提示將會扣除 1 篇閱讀額度。\n目前剩餘額度：${user.remainingLimit} 篇\n\n請問是否要確定使用？`
+    );
 
-    setIsLoading(true);
-    try {
-      const result = await viewArticleMutation.mutateAsync({
-        studentId,
-        articleId: selectedArticle.id,
-        articleTitle: selectedArticle.title,
+    if (confirmUse) {
+      deductMutation.mutate({
+        studentId: user.id,
+        articleId: article.id,
       });
-
-      if (result.success) {
-        setRemainingQuota(result.remainingQuota);
-        localStorage.setItem('remainingQuota', result.remainingQuota.toString());
-        toast.success(`已使用一篇，剩餘 ${result.remainingQuota} 篇`);
-        setShowConfirmDialog(false);
-      }
-    } catch (error) {
-      toast.error('使用失敗，請稍後重試');
-    } finally {
-      setIsLoading(false);
     }
   };
 
-  if (!studentId) {
-    return <div>載入中...</div>;
-  }
+  if (!user) return null;
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-950 dark:to-slate-900">
-      {/* Header */}
-      <header className="sticky top-0 z-40 bg-white/80 dark:bg-slate-950/80 backdrop-blur-md border-b border-slate-200 dark:border-slate-800">
-        <div className="container max-w-6xl mx-auto px-4 py-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <h1 className="text-2xl font-bold text-slate-900 dark:text-white">
-                {studentName} 的閱讀提示
-              </h1>
-              <p className="text-slate-600 dark:text-slate-400 mt-1">
-                剩餘額度：<span className="font-bold text-blue-600 dark:text-blue-400">{remainingQuota}</span> 篇
-              </p>
-            </div>
-            <Button
-              onClick={handleLogout}
-              variant="outline"
-              size="sm"
-              className="gap-2"
+    <div className="min-h-screen bg-indigo-50/50">
+      {/* 頂部導覽列，最上面顯示剩下幾篇 */}
+      <header className="bg-white border-b border-slate-200 px-8 py-4 flex justify-between items-center sticky top-0 z-10 shadow-sm">
+        <div>
+          <h1 className="text-xl font-bold text-slate-800">同學：{user.name}</h1>
+        </div>
+
+        <div className="flex items-center space-x-6">
+          <div className="bg-indigo-50 border border-indigo-200 px-5 py-2 rounded-full flex items-center space-x-2">
+            <span className="text-slate-600 text-sm font-medium">剩下幾篇：</span>
+            <span
+              className={`text-2xl font-extrabold ${
+                user.remainingLimit > 0 ? "text-indigo-600" : "text-red-500"
+              }`}
             >
-              <LogOut className="w-4 h-4" />
-              登出
-            </Button>
+              {user.remainingLimit}
+            </span>
+            <span className="text-slate-400 text-xs">/ {user.totalLimit} 篇</span>
           </div>
+
+          <button
+            onClick={handleLogout}
+            className="text-slate-500 hover:text-slate-800 text-sm font-medium transition"
+          >
+            登出
+          </button>
         </div>
       </header>
 
-      {/* Main Content */}
-      <main className="container max-w-6xl mx-auto px-4 py-12">
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          {/* Article List */}
-          <div className="lg:col-span-1">
-            <div className="sticky top-24 space-y-2 max-h-[calc(100vh-120px)] overflow-y-auto pr-2">
-              <h2 className="text-sm font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider px-3 mb-4">
-                文章列表
-              </h2>
-              {articles.map((article) => (
-                <button
-                  key={article.id}
-                  onClick={() => handleViewArticle(article)}
-                  disabled={remainingQuota === 0}
-                  className={`w-full text-left px-4 py-3 rounded-lg transition-all duration-200 flex items-center justify-between group ${
-                    selectedArticle?.id === article.id
-                      ? 'bg-blue-600 text-white shadow-lg'
-                      : remainingQuota === 0
-                      ? 'bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-500 cursor-not-allowed'
-                      : 'bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700'
-                  }`}
-                >
-                  <span className="text-sm font-medium">{article.title}</span>
-                  {selectedArticle?.id === article.id && (
-                    <ChevronRight className="w-4 h-4" />
-                  )}
-                </button>
-              ))}
+      {/* 內容區 */}
+      <main className="max-w-4xl mx-auto p-8">
+        {selectedArticle ? (
+          /* 文章內頁 */
+          <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-8">
+            <button
+              onClick={() => setSelectedArticle(null)}
+              className="mb-6 text-indigo-600 hover:text-indigo-800 text-sm font-semibold flex items-center"
+            >
+              ← 返回文章清單
+            </button>
+            <h1 className="text-3xl font-extrabold text-slate-900 mb-6">{selectedArticle.title}</h1>
+            <div className="text-slate-700 leading-relaxed whitespace-pre-wrap border-t border-slate-100 pt-6">
+              {selectedArticle.content}
             </div>
           </div>
+        ) : (
+          /* 文章/提示列表 */
+          <div>
+            <div className="mb-6">
+              <h2 className="text-2xl font-bold text-slate-800">提示與文章專區</h2>
+              <p className="text-slate-500 text-sm mt-1">
+                請點選您要閱讀的篇章，點選後系統會詢問並扣除 1 篇額度。
+              </p>
+            </div>
 
-          {/* Prompt Display */}
-          <div className="lg:col-span-2">
-            {selectedArticle ? (
-              <Card className="border-slate-200 dark:border-slate-700 shadow-lg">
-                <CardHeader className="bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-slate-800 dark:to-slate-700 border-b border-slate-200 dark:border-slate-600">
-                  <div className="flex items-start justify-between">
-                    <div>
-                      <div className="text-sm font-semibold text-blue-600 dark:text-blue-400 mb-2">
-                        第 {selectedArticle.id} 篇
-                      </div>
-                      <CardTitle className="text-2xl text-slate-900 dark:text-white">
-                        {selectedArticle.title}
-                      </CardTitle>
-                    </div>
-                  </div>
-                </CardHeader>
-                <CardContent className="pt-8">
-                  <div className="space-y-6">
-                    <div>
-                      <h3 className="text-lg font-semibold text-slate-900 dark:text-white mb-4">
-                        📖 閱讀提示
-                      </h3>
-                      <div className="text-slate-700 dark:text-slate-300 leading-relaxed text-base whitespace-pre-wrap">
-                        {selectedArticle.prompt}
-                      </div>
-                    </div>
-
-                    <div className="pt-6 border-t border-slate-200 dark:border-slate-700">
-                      <p className="text-sm text-slate-500 dark:text-slate-400 mb-4">
-                        💡 提示：仔細閱讀提示中的重點，這些通常是出題老師最關注的核心內容。
-                      </p>
-                      {remainingQuota > 0 && (
-                        <p className="text-sm text-blue-600 dark:text-blue-400 font-medium">
-                          ✓ 您還有 {remainingQuota} 篇額度可使用
-                        </p>
-                      )}
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
+            {isLoading ? (
+              <p className="text-center py-12 text-slate-400">正在讀取內容...</p>
             ) : (
-              <Card className="border-slate-200 dark:border-slate-700 border-2 border-dashed">
-                <CardContent className="pt-16 pb-16 text-center">
-                  <div className="space-y-4">
-                    <div className="text-5xl">📚</div>
-                    <h3 className="text-xl font-semibold text-slate-900 dark:text-white">
-                      {remainingQuota === 0 ? '額度已用完' : '選擇一篇文章開始'}
-                    </h3>
-                    <p className="text-slate-600 dark:text-slate-400">
-                      {remainingQuota === 0
-                        ? '您已用完所有額度，請聯繫管理員'
-                        : '點擊左側的文章標題，查看該篇的深度閱讀提示'}
-                    </p>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {articles.map((article: any) => (
+                  <div
+                    key={article.id}
+                    className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 flex flex-col justify-between hover:shadow-md transition"
+                  >
+                    <div>
+                      <h3 className="text-lg font-bold text-slate-800 mb-2">{article.title}</h3>
+                      <p className="text-slate-400 text-xs line-clamp-2">
+                        點擊後解鎖詳細觀看內容...
+                      </p>
+                    </div>
+
+                    <button
+                      onClick={() => handleSelectArticle(article)}
+                      disabled={user.remainingLimit <= 0 || deductMutation.isLoading}
+                      className={`mt-6 w-full py-2.5 rounded-lg font-bold text-sm transition ${
+                        user.remainingLimit > 0
+                          ? "bg-indigo-600 hover:bg-indigo-700 text-white shadow"
+                          : "bg-slate-100 text-slate-400 cursor-not-allowed"
+                      }`}
+                    >
+                      {user.remainingLimit > 0 ? "閱讀此篇 (扣除 1 篇額度)" : "剩餘額度不足"}
+                    </button>
                   </div>
-                </CardContent>
-              </Card>
+                ))}
+              </div>
             )}
           </div>
-        </div>
+        )}
       </main>
-
-      {/* Confirmation Dialog */}
-      <AlertDialog open={showConfirmDialog} onOpenChange={setShowConfirmDialog}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>確認使用額度？</AlertDialogTitle>
-            <AlertDialogDescription>
-              您即將查看「{selectedArticle?.title}」的提示。
-              <br />
-              <br />
-              此操作將扣除 1 篇額度，您將剩餘 <span className="font-bold text-slate-900 dark:text-white">{remainingQuota - 1}</span> 篇。
-              <br />
-              <br />
-              是否確認繼續？
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <div className="flex gap-3">
-            <AlertDialogCancel>取消</AlertDialogCancel>
-            <AlertDialogAction onClick={handleConfirmView} disabled={isLoading}>
-              {isLoading ? '處理中...' : '確認使用'}
-            </AlertDialogAction>
-          </div>
-        </AlertDialogContent>
-      </AlertDialog>
     </div>
   );
 }
