@@ -1,26 +1,1611 @@
-<!doctype html>
-<html lang="en">
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>青埔國中閱讀測驗提示系統 (qpreadingtips - Firebase 雲端歷程監控版)</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <!-- Firebase JS SDK (Compat version for single-file HTML) -->
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@300;400;500;700&display=swap');
+        body {
+            font-family: 'Noto Sans TC', sans-serif;
+            background-color: #f8fafc;
+        }
+        .modal-bg {
+            background-color: rgba(15, 23, 42, 0.6);
+            backdrop-filter: blur(4px);
+        }
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 6px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background: #f1f5f9;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background: #cbd5e1;
+            border-radius: 3px;
+        }
+        .status-badge-online {
+            background-color: #dcfce7;
+            color: #166534;
+            border: 1px solid #bbf7d0;
+        }
+        .status-badge-offline {
+            background-color: #f1f5f9;
+            color: #475569;
+            border: 1px solid #e2e8f0;
+        }
+        .badge-login {
+            background-color: #e0f2fe;
+            color: #0369a1;
+            border: 1px solid #bae6fd;
+        }
+        .badge-logout {
+            background-color: #f3f4f6;
+            color: #4b5563;
+            border: 1px solid #e5e7eb;
+        }
+        .badge-unlock {
+            background-color: #fef3c7;
+            color: #b45309;
+            border: 1px solid #fde68a;
+        }
+    </style>
+</head>
+<body class="min-h-screen text-slate-800 flex flex-col">
 
-  <head>
-    <meta charset="UTF-8" />
-    <meta
-      name="viewport"
-      content="width=device-width, initial-scale=1.0, maximum-scale=1" />
-    <title>閱讀測驗提示詞工具箱</title>    
-    <!-- THIS IS THE START OF A COMMENT BLOCK, BLOCK TO BE DELETED: Google Fonts here, example:
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
-    THIS IS THE END OF A COMMENT BLOCK, BLOCK TO BE DELETED -->
-  </head>
+    <!-- 頂端導覽列 -->
+    <header class="bg-white border-b border-slate-200 sticky top-0 z-30 shadow-sm">
+        <div class="max-w-6xl mx-auto px-4 sm:px-6 py-3.5 flex justify-between items-center">
+            <div class="flex items-center space-x-3">
+                <div class="bg-indigo-600 text-white p-2 rounded-lg shadow-sm">
+                    <i data-lucide="book-open" class="w-6 h-6"></i>
+                </div>
+                <div>
+                    <div class="flex items-center gap-2">
+                        <h1 class="text-lg font-bold text-slate-800 leading-tight">青埔國中閱讀測驗提示系統</h1>
+                        <span id="cloudStatusBadge" class="text-[10px] px-2 py-0.5 rounded-full font-medium status-badge-offline flex items-center gap-1">
+                            <i data-lucide="wifi-off" class="w-3 h-3"></i>
+                            <span>單機模式</span>
+                        </span>
+                    </div>
+                    <p class="text-xs text-slate-500">專案名稱：qpreadingtips | 學生登入/登出與閱讀提示紀錄監控</p>
+                </div>
+            </div>
 
-  <body>
-    <div id="root"></div>
-    <script type="module" src="/src/main.tsx"></script>
-    <script
-      defer
-      src="%VITE_ANALYTICS_ENDPOINT%/umami"
-      data-website-id="%VITE_ANALYTICS_WEBSITE_ID%"></script>
-  </body>
+            <!-- 使用者資訊 / 登出區 -->
+            <div id="userInfoBar" class="hidden flex items-center space-x-3 sm:space-x-4">
+                <div id="studentQuotaBadge" class="hidden bg-indigo-50 border border-indigo-200 px-3 py-1.5 rounded-full flex items-center space-x-2">
+                    <i data-lucide="sparkles" class="w-4 h-4 text-indigo-600"></i>
+                    <span class="text-xs text-indigo-700 font-medium">剩餘額度：<strong id="quotaDisplay" class="text-indigo-900 font-bold text-sm">0</strong> 篇</span>
+                </div>
+                <div class="text-right hidden sm:block">
+                    <div id="userNameDisplay" class="text-sm font-bold text-slate-700"></div>
+                    <div id="userRoleDisplay" class="text-xs text-slate-500"></div>
+                </div>
+                <button onclick="logout()" class="text-slate-500 hover:text-red-600 p-2 rounded-lg hover:bg-slate-100 transition flex items-center space-x-1" title="登出">
+                    <i data-lucide="log-out" class="w-5 h-5"></i>
+                    <span class="text-xs font-medium hidden sm:inline">登出</span>
+                </button>
+            </div>
+        </div>
+    </header>
 
+    <!-- 主要內容區 -->
+    <main class="flex-1 max-w-6xl mx-auto w-full px-4 sm:px-6 py-8">
+
+        <!-- 1. 登入視窗區 -->
+        <section id="loginSection" class="max-w-md mx-auto mt-6 bg-white p-6 sm:p-8 rounded-2xl shadow-xl border border-slate-100">
+            <div class="text-center mb-6">
+                <h2 class="text-2xl font-bold text-slate-800">系統登入</h2>
+                <p class="text-sm text-slate-500 mt-1">請選擇身份並輸入帳號密碼</p>
+            </div>
+
+            <!-- 切換頁籤 -->
+            <div class="flex border-b border-slate-200 mb-6">
+                <button id="tabStudent" onclick="switchLoginTab('student')" class="flex-1 py-2.5 text-center text-sm font-medium border-b-2 border-indigo-600 text-indigo-600 transition">
+                    學生登入
+                </button>
+                <button id="tabAdmin" onclick="switchLoginTab('admin')" class="flex-1 py-2.5 text-center text-sm font-medium border-b-2 border-transparent text-slate-500 hover:text-slate-700 transition">
+                    教師 / 管理員
+                </button>
+            </div>
+
+            <form id="loginForm" onsubmit="handleLogin(event)">
+                <input type="hidden" id="loginRole" value="student">
+                <div class="space-y-4">
+                    <div>
+                        <label class="block text-xs font-medium text-slate-600 mb-1">帳號</label>
+                        <div class="relative">
+                            <i data-lucide="user" class="w-4 h-4 text-slate-400 absolute left-3 top-3"></i>
+                            <input type="text" id="loginUsername" required class="w-full pl-9 pr-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none" placeholder="請輸入帳號 (如: 70701)">
+                        </div>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-slate-600 mb-1">密碼</label>
+                        <div class="relative">
+                            <i data-lucide="key-round" class="w-4 h-4 text-slate-400 absolute left-3 top-3"></i>
+                            <input type="password" id="loginPassword" required class="w-full pl-9 pr-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none" placeholder="請輸入密碼">
+                        </div>
+                    </div>
+                    <div id="loginError" class="hidden text-xs text-red-500 bg-red-50 p-2.5 rounded-lg border border-red-200 flex items-center space-x-1">
+                        <i data-lucide="alert-circle" class="w-4 h-4 flex-shrink-0"></i>
+                        <span id="loginErrorText">帳號或密碼錯誤！</span>
+                    </div>
+                    <button type="submit" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-2.5 rounded-lg text-sm transition shadow-md hover:shadow-lg">
+                        登入系統
+                    </button>
+                </div>
+            </form>
+
+            <div class="mt-6 text-center text-xs text-slate-400 border-t border-slate-100 pt-4">
+                預設管理員帳號：<code class="bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded">admin</code> 密碼：<code class="bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded">readingadmin</code>
+            </div>
+        </section>
+
+
+        <!-- 2. 學生檢視畫面 (閱讀文章選擇區) -->
+        <section id="studentSection" class="hidden space-y-6">
+            <div class="bg-gradient-to-r from-indigo-500 to-purple-600 text-white p-6 rounded-2xl shadow-lg flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                <div>
+                    <h2 class="text-xl font-bold flex items-center gap-2">
+                        <span>歡迎使用閱讀引導提示</span>
+                        <span class="text-xs bg-white/20 px-2.5 py-0.5 rounded-full font-normal">20 篇精選文章</span>
+                    </h2>
+                    <p class="text-xs text-indigo-100 mt-1">點選篇名即可使用額度查看該篇解題與文章結構分析提示。</p>
+                </div>
+                <div class="bg-white/10 backdrop-blur-md px-4 py-3 rounded-xl border border-white/20 text-center w-full sm:w-auto">
+                    <span class="block text-xs text-indigo-100">剩餘可解鎖篇數</span>
+                    <span class="text-2xl font-black text-white" id="bannerQuotaDisplay">0</span>
+                    <span class="text-xs text-indigo-200">篇</span>
+                </div>
+            </div>
+
+            <!-- 文章卡片列表格狀佈局 -->
+            <div id="articlesGrid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 gap-4">
+                <!-- JS 動態渲染卡片 -->
+            </div>
+        </section>
+
+
+        <!-- 3. 教師 / 管理員後台管理區 -->
+        <section id="adminSection" class="hidden space-y-6">
+            <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-slate-200 pb-4">
+                <div>
+                    <h2 class="text-xl font-bold text-slate-800 flex items-center gap-2">
+                        <i data-lucide="shield-check" class="w-6 h-6 text-indigo-600"></i>
+                        <span>學生閱讀額度與活動監控後台 (qpreadingtips)</span>
+                    </h2>
+                    <p class="text-xs text-slate-500 mt-0.5">可管理學生帳號額度，並可即時查詢學生登入、登出與提示點閱歷程。</p>
+                </div>
+                <div class="flex flex-wrap gap-2">
+                    <button onclick="openAddStudentModal()" class="bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-medium px-4 py-2 rounded-lg flex items-center space-x-1 shadow transition">
+                        <i data-lucide="user-plus" class="w-4 h-4"></i>
+                        <span>新增學生</span>
+                    </button>
+                    <button onclick="openFirebaseConfigModal()" class="bg-amber-600 hover:bg-amber-700 text-white text-xs font-medium px-3.5 py-2 rounded-lg flex items-center space-x-1 shadow transition">
+                        <i data-lucide="flame" class="w-4 h-4"></i>
+                        <span>qpreadingtips Firebase 設定</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Firebase 雲端狀態提示條 -->
+            <div id="firebaseAlertBox" class="bg-amber-50 border border-amber-200 text-amber-900 p-3.5 rounded-xl text-xs flex items-center justify-between gap-2">
+                <div class="flex items-center gap-2">
+                    <i data-lucide="info" class="w-4 h-4 text-amber-600 flex-shrink-0"></i>
+                    <span id="firebaseAlertText">目前為離線單機模式（僅存於本機瀏覽器）。點擊右上角「qpreadingtips Firebase 設定」可開啟跨裝置即時同步與紀錄監控！</span>
+                </div>
+                <button onclick="openFirebaseConfigModal()" class="underline font-bold hover:text-amber-700 whitespace-nowrap">前往設定</button>
+            </div>
+
+            <!-- 後台功能切換頁籤：帳號管理 vs 活動歷程紀錄 -->
+            <div class="flex border-b border-slate-200">
+                <button id="adminTabStudents" onclick="switchAdminMainTab('students')" class="py-3 px-6 text-sm font-bold border-b-2 border-indigo-600 text-indigo-600 flex items-center space-x-2 transition">
+                    <i data-lucide="users" class="w-4 h-4"></i>
+                    <span>學生名單與額度管理</span>
+                </button>
+                <button id="adminTabLogs" onclick="switchAdminMainTab('logs')" class="py-3 px-6 text-sm font-bold border-b-2 border-transparent text-slate-500 hover:text-slate-700 flex items-center space-x-2 transition">
+                    <i data-lucide="history" class="w-4 h-4"></i>
+                    <span>學生登入登出與提示點閱歷程</span>
+                </button>
+            </div>
+
+            <!-- 後台子分頁 1：學生名單表格 -->
+            <div id="adminStudentsPanel" class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+                <div class="p-4 bg-slate-50 border-b border-slate-200 flex justify-between items-center flex-wrap gap-2">
+                    <div class="relative flex-1 max-w-xs">
+                        <i data-lucide="search" class="w-4 h-4 text-slate-400 absolute left-3 top-2.5"></i>
+                        <input type="text" id="searchStudentInput" oninput="renderAdminStudentTable()" placeholder="搜尋學生姓名或帳號..." class="w-full pl-9 pr-3 py-1.5 text-xs border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                    </div>
+                    <div class="flex items-center space-x-3 text-xs text-slate-500">
+                        <span>總學生數：<strong id="totalStudentCount" class="text-slate-700">0</strong> 人</span>
+                        <button onclick="syncLocalToFirebase()" id="btnPushCloud" class="hidden text-indigo-600 hover:text-indigo-800 underline font-medium">推送到 qpreadingtips 雲端</button>
+                    </div>
+                </div>
+
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left border-collapse">
+                        <thead>
+                            <tr class="bg-slate-100 text-slate-600 text-xs font-semibold uppercase tracking-wider border-b border-slate-200">
+                                <th class="py-3 px-4">學生姓名</th>
+                                <th class="py-3 px-4">帳號 / 密碼</th>
+                                <th class="py-3 px-4">總額度</th>
+                                <th class="py-3 px-4">剩餘額度</th>
+                                <th class="py-3 px-4">額度調整 (+ / -)</th>
+                                <th class="py-3 px-4 text-right">操作管理</th>
+                            </tr>
+                        </thead>
+                        <tbody id="studentTableBody" class="divide-y divide-slate-100 text-xs text-slate-700">
+                            <!-- JS 動態生成表格列 -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- 後台子分頁 2：活動歷程監控表格 -->
+            <div id="adminLogsPanel" class="hidden bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+                <div class="p-4 bg-slate-50 border-b border-slate-200 flex justify-between items-center flex-wrap gap-3">
+                    <div class="flex items-center gap-2 flex-1 max-w-md">
+                        <div class="relative flex-1">
+                            <i data-lucide="search" class="w-4 h-4 text-slate-400 absolute left-3 top-2.5"></i>
+                            <input type="text" id="searchLogInput" oninput="renderAdminLogTable()" placeholder="搜尋學生姓名、帳號或篇名..." class="w-full pl-9 pr-3 py-1.5 text-xs border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                        </div>
+                        <select id="filterLogAction" onchange="renderAdminLogTable()" class="px-2.5 py-1.5 text-xs border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white">
+                            <option value="ALL">所有動作類別</option>
+                            <option value="LOGIN">僅顯示「登入」</option>
+                            <option value="LOGOUT">僅顯示「登出」</option>
+                            <option value="UNLOCK">僅顯示「解鎖提示」</option>
+                        </select>
+                    </div>
+                    <div class="flex items-center space-x-2">
+                        <button onclick="exportLogsCSV()" class="bg-slate-100 hover:bg-slate-200 text-slate-700 px-3 py-1.5 rounded-lg text-xs font-medium flex items-center space-x-1 transition">
+                            <i data-lucide="download" class="w-3.5 h-3.5"></i>
+                            <span>匯出 CSV 紀錄檔</span>
+                        </button>
+                        <button onclick="clearAllLogs()" class="bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 px-3 py-1.5 rounded-lg text-xs font-medium flex items-center space-x-1 transition">
+                            <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+                            <span>清空歷程紀錄</span>
+                        </button>
+                    </div>
+                </div>
+
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left border-collapse">
+                        <thead>
+                            <tr class="bg-slate-100 text-slate-600 text-xs font-semibold uppercase tracking-wider border-b border-slate-200">
+                                <th class="py-3 px-4">時間戳記</th>
+                                <th class="py-3 px-4">學生姓名</th>
+                                <th class="py-3 px-4">帳號</th>
+                                <th class="py-3 px-4">動作類別</th>
+                                <th class="py-3 px-4">詳細說明 / 使用篇名</th>
+                            </tr>
+                        </thead>
+                        <tbody id="logTableBody" class="divide-y divide-slate-100 text-xs text-slate-700">
+                            <!-- JS 動態生成歷史紀錄列表 -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+
+    <!-- 彈出視窗 1：扣除額度確認 Modal (對學生) -->
+    <div id="confirmModal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4 modal-bg">
+        <div class="bg-white rounded-2xl shadow-2xl max-w-sm w-full p-6 text-center transform transition-all border border-slate-100">
+            <div class="w-12 h-12 bg-amber-100 text-amber-600 rounded-full flex items-center justify-center mx-auto mb-4">
+                <i data-lucide="help-circle" class="w-6 h-6"></i>
+            </div>
+            <h3 class="text-lg font-bold text-slate-800">確認解鎖此篇提示？</h3>
+            <p class="text-xs text-slate-600 mt-2">
+                篇名：<strong id="modalArticleTitle" class="text-indigo-600"></strong>
+            </p>
+            <div class="my-4 bg-slate-50 p-3 rounded-xl border border-slate-200 text-xs text-slate-600 space-y-1">
+                <div>解鎖將扣除：<strong class="text-red-600">1</strong> 篇額度</div>
+                <div>目前剩餘額度：<strong id="modalCurrentQuota" class="text-indigo-600">0</strong> 篇</div>
+            </div>
+            <div class="flex space-x-3 mt-6">
+                <button onclick="closeConfirmModal()" class="flex-1 py-2 text-xs font-medium border border-slate-300 rounded-lg text-slate-600 hover:bg-slate-100 transition">
+                    取消
+                </button>
+                <button id="btnConfirmUnlock" onclick="executeUnlockArticle()" class="flex-1 py-2 text-xs font-medium bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg shadow transition">
+                    確定使用 1 篇
+                </button>
+            </div>
+        </div>
+    </div>
+
+
+    <!-- 彈出視窗 2：顯示文章長提示 Modal (對學生) -->
+    <div id="hintModal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4 modal-bg">
+        <div class="bg-white rounded-2xl shadow-2xl max-w-3xl w-full max-h-[85vh] flex flex-col overflow-hidden border border-slate-100">
+            <!-- Header -->
+            <div class="p-5 bg-slate-900 text-white flex justify-between items-center flex-shrink-0">
+                <div class="flex items-center space-x-2">
+                    <span class="bg-indigo-500 text-xs px-2 py-0.5 rounded font-medium">詳細閱讀提示</span>
+                    <h3 id="hintModalTitle" class="font-bold text-base text-slate-100 truncate max-w-md"></h3>
+                </div>
+                <button onclick="closeHintModal()" class="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 transition">
+                    <i data-lucide="x" class="w-5 h-5"></i>
+                </button>
+            </div>
+
+            <!-- Body (Scrollable) -->
+            <div class="p-6 overflow-y-auto custom-scrollbar flex-1 space-y-6 text-slate-700 text-sm">
+                <!-- 簡介 -->
+                <div class="bg-indigo-50 border-l-4 border-indigo-500 p-4 rounded-r-lg">
+                    <h4 class="font-bold text-indigo-900 mb-1 flex items-center gap-1.5">
+                        <i data-lucide="bookmark" class="w-4 h-4 text-indigo-600"></i>
+                        <span>篇章摘要導讀</span>
+                    </h4>
+                    <p id="hintOverviewText" class="text-xs text-indigo-950 leading-relaxed"></p>
+                </div>
+
+                <!-- 核心解析 -->
+                <div class="space-y-2">
+                    <h4 class="font-bold text-slate-800 flex items-center gap-2 border-b border-slate-200 pb-2">
+                        <i data-lucide="compass" class="w-4 h-4 text-indigo-600"></i>
+                        <span>文章核心觀點與主旨</span>
+                    </h4>
+                    <p id="hintCoreText" class="text-xs text-slate-600 leading-relaxed bg-slate-50 p-3.5 rounded-xl border border-slate-200/80"></p>
+                </div>
+
+                <!-- 解題關鍵線索 (List) -->
+                <div class="space-y-2">
+                    <h4 class="font-bold text-slate-800 flex items-center gap-2 border-b border-slate-200 pb-2">
+                        <i data-lucide="key" class="w-4 h-4 text-amber-500"></i>
+                        <span>解題關鍵線索與結構推論</span>
+                    </h4>
+                    <ul id="hintCluesList" class="space-y-2 text-xs text-slate-600">
+                        <!-- JS 動態生成 -->
+                    </ul>
+                </div>
+
+                <!-- 作答思考指引 -->
+                <div class="bg-amber-50/70 border border-amber-200 p-4 rounded-xl">
+                    <h4 class="font-bold text-amber-900 mb-1 flex items-center gap-1.5 text-xs">
+                        <i data-lucide="lightbulb" class="w-4 h-4 text-amber-600"></i>
+                        <span>作答引導與避坑提示</span>
+                    </h4>
+                    <p id="hintQuestionsGuideText" class="text-xs text-amber-950 leading-relaxed"></p>
+                </div>
+            </div>
+
+            <!-- Footer -->
+            <div class="p-4 bg-slate-50 border-t border-slate-200 flex justify-end flex-shrink-0">
+                <button onclick="closeHintModal()" class="bg-slate-800 hover:bg-slate-900 text-white text-xs font-medium px-5 py-2 rounded-lg transition">
+                    關閉提示
+                </button>
+            </div>
+        </div>
+    </div>
+
+
+    <!-- 彈出視窗 3：新增/編輯學生 Modal (對管理員) -->
+    <div id="addStudentModal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4 modal-bg">
+        <div class="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6 border border-slate-100">
+            <div class="flex justify-between items-center border-b border-slate-200 pb-3 mb-4">
+                <h3 id="studentFormTitle" class="font-bold text-slate-800">新增學生帳號</h3>
+                <button onclick="closeAddStudentModal()" class="text-slate-400 hover:text-slate-600">
+                    <i data-lucide="x" class="w-5 h-5"></i>
+                </button>
+            </div>
+            <form onsubmit="saveStudentForm(event)" class="space-y-4">
+                <input type="hidden" id="editStudentId" value="">
+                <div>
+                    <label class="block text-xs font-medium text-slate-600 mb-1">學生姓名</label>
+                    <input type="text" id="studentFormName" required class="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none" placeholder="例如：王小明">
+                </div>
+                <div>
+                    <label class="block text-xs font-medium text-slate-600 mb-1">登入帳號</label>
+                    <input type="text" id="studentFormUsername" required class="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none" placeholder="例如：70701">
+                </div>
+                <div>
+                    <label class="block text-xs font-medium text-slate-600 mb-1">登入密碼</label>
+                    <input type="text" id="studentFormPassword" required class="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none" placeholder="預設密碼">
+                </div>
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-xs font-medium text-slate-600 mb-1">總可用篇數</label>
+                        <input type="number" id="studentFormTotalQuota" min="0" value="10" required class="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-slate-600 mb-1">剩餘篇數</label>
+                        <input type="number" id="studentFormRemainingQuota" min="0" value="10" required class="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none">
+                    </div>
+                </div>
+                <div class="flex space-x-2 pt-2">
+                    <button type="button" onclick="closeAddStudentModal()" class="flex-1 py-2 text-xs border border-slate-300 rounded-lg text-slate-600 hover:bg-slate-100">取消</button>
+                    <button type="submit" class="flex-1 py-2 text-xs bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-medium shadow">儲存資料</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+
+    <!-- 彈出視窗 4：Firebase 雲端連線設定 Modal (對管理員) -->
+    <div id="firebaseConfigModal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4 modal-bg">
+        <div class="bg-white rounded-2xl shadow-2xl max-w-lg w-full p-6 border border-slate-100">
+            <div class="flex justify-between items-center border-b border-slate-200 pb-3 mb-4">
+                <h3 class="font-bold text-slate-800 flex items-center gap-1.5">
+                    <i data-lucide="flame" class="w-5 h-5 text-amber-500"></i>
+                    <span>qpreadingtips Firebase 專案設定</span>
+                </h3>
+                <button onclick="closeFirebaseConfigModal()" class="text-slate-400 hover:text-slate-600">
+                    <i data-lucide="x" class="w-5 h-5"></i>
+                </button>
+            </div>
+            
+            <div class="space-y-4 text-xs text-slate-600">
+                <p class="leading-relaxed bg-amber-50 text-amber-900 p-3 rounded-xl border border-amber-100">
+                    請將 Firebase 控制台專案 <code class="bg-white px-1 rounded font-mono font-bold text-amber-900">qpreadingtips</code> 所提供的 SDK Configuration 貼於下方，系統會自動在 Firestore 的 <code class="bg-white px-1 rounded font-mono">students</code> 與 <code class="bg-white px-1 rounded font-mono">activity_logs</code> 集合進行即時同步！
+                </p>
+
+                <div>
+                    <label class="block font-medium text-slate-700 mb-1">Firebase SDK Configuration (貼上 JSON 變數)</label>
+                    <textarea id="firebaseConfigTextarea" rows="6" class="w-full px-3 py-2 font-mono text-[11px] border border-slate-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:outline-none" placeholder='{
+  "apiKey": "AIzaSy...",
+  "authDomain": "qpreadingtips.firebaseapp.com",
+  "projectId": "qpreadingtips",
+  "storageBucket": "qpreadingtips.appspot.com",
+  "messagingSenderId": "123456789",
+  "appId": "1:123456789:web:abcdef"
+}'></textarea>
+                </div>
+
+                <div class="pt-2 border-t border-slate-200 flex flex-col sm:flex-row gap-2">
+                    <button onclick="exportStudentDataJSON()" type="button" class="flex-1 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium rounded-lg text-xs flex items-center justify-center gap-1">
+                        <i data-lucide="download" class="w-4 h-4"></i>
+                        <span>匯出 JSON 備份</span>
+                    </button>
+                    <label class="flex-1 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium rounded-lg text-xs flex items-center justify-center gap-1 cursor-pointer">
+                        <i data-lucide="upload" class="w-4 h-4"></i>
+                        <span>匯入 JSON 備份</span>
+                        <input type="file" accept=".json" onchange="importStudentDataJSON(event)" class="hidden">
+                    </label>
+                </div>
+            </div>
+
+            <div class="flex space-x-2 mt-6">
+                <button onclick="closeFirebaseConfigModal()" class="flex-1 py-2 text-xs border border-slate-300 rounded-lg text-slate-600 hover:bg-slate-100">取消</button>
+                <button onclick="saveFirebaseSettings()" class="flex-1 py-2 text-xs bg-amber-600 hover:bg-amber-700 text-white rounded-lg font-medium shadow">儲存並連線 Firebase</button>
+            </div>
+        </div>
+    </div>
+
+
+    <!-- 頁尾 -->
+    <footer class="bg-white border-t border-slate-200 py-4 text-center text-xs text-slate-400 mt-auto">
+        <p>114 桃園市立青埔國中 - 綜合閱讀測驗提示系統 &copy; 2026 (Firebase: qpreadingtips)</p>
+    </footer>
+
+
+    <!-- 核心 JS 邏輯 -->
+    <script>
+        // ------------------------------------------------------------------
+        // 1. 20 篇閱讀測驗完整的詳細提示資料集
+        // ------------------------------------------------------------------
+        const articlesData = [
+  {
+    "id": 1,
+    "title": "為什麼人不如狗",
+    "hint_overview": "本篇藉由寵物狗「大黃」離世的心碎經歷，反思人類社會中常帶著批判與條件的相處模式。",
+    "hints": {
+      "core": "文章核心在於對比「寵物犬對主人的無條件支持」與「人類相處時的批評與計較」。作者藉由友人的言語傷害，點出人類往往無法全心全意接受別人的好，也難以像動物般給予純粹的陪伴。",
+      "clues": [
+        "注意洪蘭大怒的原因：並非氣友人講話不禮貌，而是友人輕描淡寫地說「不過是隻狗而已」，否定了陪伴與感情的價值。",
+        "觀察大黃的反應細節：搖尾巴、迎上前、靜靜陪伴不說風涼話，強調「只有支持，沒有批評」。",
+        "分析美國以狗協助閱讀障礙兒童的例子：關鍵在於狗「不吹鬍子瞪眼睛、不流露不耐煩」，創造了無壓力的安全環境。"
+      ],
+      "questions_guide": "作答時，請聚焦於「情感價值」與「接納態度」。問到為什麼人不如狗時，答案通常圍繞在人類容易看人缺點、無法給予無條件支持與回報。"
+    }
+  },
+  {
+    "id": 2,
+    "title": "一個沒有老師的世界",
+    "hint_overview": "文章透過反烏托邦式的警示預言，探討教師罷工後社會對教育本質的集體反思。",
+    "hints": {
+      "core": "本篇探討「教育」與「教學」的差異。初期社會以為AI與補習班能完美取代老師，但隨著時間推移，家長面臨經濟與陪伴雙重危機，孩子也發現AI無法給予真正的心理關懷與情感回應。",
+      "clues": [
+        "留意大眾心理的三階段轉變：初期（歡呼雀躍、覺得AI更好）➔ 中期（補習班漲價、焦頭爛額、發現自學門檻高）➔ 後期（集體反思、懷念真人的溫暖陪伴）。",
+        "理解「自學」的現實殘酷點：文中指出自學需要時間、積蓄與長期準備，非一般家庭所能負擔。",
+        "體會AI老師的局限：AI雖然語氣溫和、知識齊全，但只是「在說話」而非「看見孩子」，缺乏情感共鳴與倫理約束。"
+      ],
+      "questions_guide": "思考題目時，切忌只看表面技術（如AI很強），要緊扣文章主旨——教育是「人與人之間的溫度與看見」，而非單向的資訊傳遞。"
+    }
+  },
+  {
+    "id": 3,
+    "title": "曼谷的自助旅行之路",
+    "hint_overview": "記敘文體，描繪作者首次走出華語圈進行曼谷自助旅行的心路歷程與文化震撼。",
+    "hints": {
+      "core": "文章展現了跨出舒適圈的勇氣與自助旅行的成長體悟。從行前規劃的焦慮，到異國街頭的交通、美食與人文體驗，突顯獨立面對挑戰的自我突破。",
+      "clues": [
+        "捕捉作者情緒變化：從出發前的「興奮與忐忑」，到融入異國文化後的「眼界開闊與自信」。",
+        "注意文中提到的在地特色：曼谷的多元交通（BTS捷運、Tuk-Tuk嘟嘟車）、豐富的街頭小吃與友善的微笑文化。",
+        "比較自助旅行與團體旅遊：自助旅行需要自己安排交通住宿，雖有不確定性，但更能深度體驗在地生活並培養應變能力。"
+      ],
+      "questions_guide": "解題時請特別注意作者的心情轉折點，以及異國文化給予作者的具體啟發。"
+    }
+  },
+  {
+    "id": 4,
+    "title": "走進池上稻浪的蔣勳書房 在90歲老屋慢下來讀心",
+    "hint_overview": "融合感官描寫與美學省思，帶領讀者在池上的自然與老屋空間中體會「慢生活」。",
+    "hints": {
+      "core": "美學大師蔣勳將90歲老屋打造成心靈棲居之所，藉由台東池上的稻浪、月桃花香與老建築，引導現代人擺脫都市的急躁，透過「慢下來」重拾對生活與內心的感知能力。",
+      "clues": [
+        "細讀感官摹寫：嗅覺（月桃花的淡淡薑香）、視覺（綠意稻浪、老屋光影），這些感官體驗是喚醒心靈的媒介。",
+        "理解空間的象徵意義：90歲老屋代表歲月的沉澱與歷史的溫度，與池上的自然風光相呼應。",
+        "掌握「讀心」的深層意涵：不只是閱讀書本，更是讀懂自己的內心需求與生命的步調。"
+      ],
+      "questions_guide": "題目多考查感官摹寫的修辭法以及作者想要傳達的生活態度，請鎖定「慢」、「感受」、「心靈靜謐」等關鍵詞。"
+    }
+  },
+  {
+    "id": 5,
+    "title": "旅美小簡",
+    "hint_overview": "抒情與寫實並重，記錄作者在異鄉（美國）勞動與生活的切身體驗與文化反思。",
+    "hints": {
+      "core": "作者親身經歷美國高強度的勞動（如連續八小時推草坪），體會到異國生活的真實辛勞與嚴謹步調，打破了外人對赴美生活總是輕鬆美好的幻想。",
+      "clues": [
+        "注意對話與細節：同事們表示「這裡可能是最清閒的」，反襯出美國整體社會競爭與工作節奏之緊張。",
+        "體會身體的真實勞頓：八小時推草坪不只是體力考驗，更是對心志與耐力的磨練。",
+        "理解作者的反思：身處其中才能真正理解生活的本質，對「勞動」與「異鄉生存」有更深刻的敬畏。"
+      ],
+      "questions_guide": "答題時請關注作者的心境轉變，以及文中如何透過具體工作細節來打破刻板印象。"
+    }
+  },
+  {
+    "id": 6,
+    "title": "三星電子罷工：AI時代下的分紅之爭",
+    "hint_overview": "時事新聞報導，解析半導體巨頭在AI榮景下爆發的勞資分紅爭議。",
+    "hints": {
+      "core": "AI浪潮帶來半導體獲利暴增，但企業內部的獲利分配（績效分紅制度）若無法令員工滿意，便會引發勞資緊張，進而威脅供應鏈穩定。",
+      "clues": [
+        "了解背景：AI需要大量的高效能晶片與記憶體（如 HBM），三星身為供應商收益匪淺。",
+        "爭議核心：公司賺錢與員工分紅之間的落差，工會要求更透明公平的薪酬與分紅機制。",
+        "潛在衝擊：罷工可能影響晶片產能，對全球AI產業鏈與科技業競爭力造成連帶影響。"
+      ],
+      "questions_guide": "回答問題時，需精準區分「產業外部榮景（AI需求高）」與「企業內部矛盾（薪酬分配不公）」的因果關係。"
+    }
+  },
+  {
+    "id": 7,
+    "title": "Grab 收購 foodpanda：台灣外送市場將迎來新變化",
+    "hint_overview": "商業與社會議題，探討外送平台巨頭併購對市場結構、外送員與消費者的多重影響。",
+    "hints": {
+      "core": "外送市場趨向寡頭壟斷（甚至單一獨大），雖然平台營運效率可能提升，但可能導致抽成提高、外送員權益受損及消費者選擇減少。",
+      "clues": [
+        "分析三方影響：消費者（優惠可能減少、服務費上升）、外送員（每單報酬演算法改變、缺乏議價力）、店家（抽成比例被迫接受）。",
+        "注意公平會角色：政府需透過反壟斷法規進行審查，避免過度壟斷危害市場健康發展。",
+        "思考平台經濟本質：便利性與勞動權益之間的槓桿如何取得平衡。"
+      ],
+      "questions_guide": "作答時請關注併購案帶來的「壟斷風險」與對「消費者、外送員、店家」三方的具體利弊。"
+    }
+  },
+  {
+    "id": 8,
+    "title": "先進封裝技術：讓晶片更強大的秘密武器",
+    "hint_overview": "科技科普文章，解釋半導體如何透過先進封裝打破晶片微縮極限。",
+    "hints": {
+      "core": "當晶片單純靠物理微縮（製程節點）面臨瓶頸與高昂成本時，先進封裝技術透過立體堆疊與異質整合，讓不同晶片高速互聯，大幅提升效能。",
+      "clues": [
+        "傳統瓶頸：摩爾定律放緩，單一晶片面積有限且製造昂貴。",
+        "先進封裝優勢：就像「從平房蓋成立體摩天大樓」，把小晶片（Chiplets）黏合在一起，縮短訊號傳輸距離、降低功耗。",
+        "AI關鍵：AI運算需要極高的資料傳輸頻寬（如 CoWoS 與 HBM 的結合），先進封裝是不可或缺的基石。"
+      ],
+      "questions_guide": "重點在於理解「為什麼需要先進封裝」以及「它如何解決傳統晶片製造的瓶頸」。"
+    }
+  },
+  {
+    "id": 9,
+    "title": "Meta大裁員「台灣Threads隊長」也中招！遺憾吐心聲：來不及做1功能…驚人資遣費曝光",
+    "hint_overview": "科技產業動態，記錄全球大裁員背景下台灣關鍵技術人才的遭遇與感想。",
+    "hints": {
+      "core": "文章揭示了即使是高成長的新興社群團隊，也難逃矽谷大廠組織精簡與營運效率調整的裁員風暴，凸顯科技職場的動態與不確定性。",
+      "clues": [
+        "裁員原因：Meta 官方稱為「持續提升營運效率」的策略性組織重組。",
+        "當事人心聲：表達對未竟功能（來不及上線的產品規劃）的遺憾，但也展現出專業從業人員的坦然與韌性。",
+        "社會討論焦點：優厚的資遣費方案引發關注，同時也引發大眾對科技業高薪與高風險並存現象的討論。"
+      ],
+      "questions_guide": "答題時請分清公司營運政策（裁員）與員工個人表現之間的關係，並關注當事人對產品研發的熱情。"
+    }
+  },
+  {
+    "id": 10,
+    "title": "台灣成為全球最愛使用 Threads 的國家",
+    "hint_overview": "社群文化分析，解密台灣使用者在 Threads 上極高活躍度的背後原因。",
+    "hints": {
+      "core": "台灣成為 Threads 全球最大用戶市場之一，源於台灣人偏好文字碎碎念、即時時事討論、去精緻化的真實分享，以及演算法演進帶來的同溫層突破。",
+      "clues": [
+        "台灣用戶偏好：相較於 IG 的「完美視覺企劃」，Threads 提供無負擔的純文字交流空間，符合台灣熱衷討論時事與迷因的習慣。",
+        "演算法特性：Threads 的推薦演算法強大，能將內容推送給非追蹤者，造就「爆款文章」與熱烈互動。",
+        "次文化形成：「脆民」、「發脆文」成為新世代的流行用語與社交日常。"
+      ],
+      "questions_guide": "題目主要考查台灣人喜愛 Threads 的主客觀因素，以及 Threads 與 IG、FB 的平台風格差異。"
+    }
+  },
+  {
+    "id": 11,
+    "title": "女生的ADHD為什麼特別容易被漏掉？",
+    "hint_overview": "衛教與心理學科普，揭示女性過動症（ADHD）因內隱症狀與社會期待而被長期忽視的困境。",
+    "hints": {
+      "core": "傳統對ADHD的印象是「坐不住、打鬧過動」的男孩，但女生ADHD多表現為「靜靜發呆、腦袋飄走、完美主義補償」，導致症狀被掩蓋，成年後易引發焦慮與抑鬱。",
+      "clues": [
+        "男女症狀差異：男生多為顯性過動/衝動，女生多為內隱注意力缺失（發呆、神遊）。",
+        "完美主義與硬撐：女生常因社會對「乖巧」的期待，耗費巨大努力去補償自己的粗心，外表看起來很順從，內心卻極度耗竭。",
+        "診斷延誤的代價：因未被早期發現，常被誤認為「只是太敏感或情緒化」，錯失專業支持。"
+      ],
+      "questions_guide": "作答時請關注「性別刻板印象」如何影響臨床診斷，以及女性ADHD患者內心的真實掙扎。"
+    }
+  },
+  {
+    "id": 12,
+    "title": "我在圖書館的一天",
+    "hint_overview": "優美的抒情散文，感受圖書館空間、書籍與心靈對話的靜謐時光。",
+    "hints": {
+      "core": "作者將圖書館描繪成一個「會呼吸」的有機生命體，透過不同的椅子與空間設計，探索人與書本、人與自己心靈的距離與情感連結。",
+      "clues": [
+        "空間摹寫：「會呼吸的圖書館」、「會讀書的椅子」，運用擬人手法將無形的情境具象化。",
+        "人與書的距離：坐、立、臥、閒散，不同的閱讀姿態反映了心境的放鬆與對知識的親近。",
+        "心靈體悟：圖書館不只是借書的地方，更是安頓身心、沉澱思考的心靈避風港。"
+      ],
+      "questions_guide": "題目多聚焦於文章的擬人與感官修辭，以及作者在圖書館中所獲得的情感沉澱與自由感受。"
+    }
+  },
+  {
+    "id": 13,
+    "title": "貓的天堂：探索舒適圈的勇氣",
+    "hint_overview": "法國文學名篇改寫，藉由家貓出走的故事，對比「安逸包養」與「冒險自由」的人生抉擇。",
+    "hints": {
+      "core": "故事講述一隻生活優渥的富貴家貓嚮往外面的自由，出走後雖體驗了荒野的廣闊，卻也面臨飢寒與危險，最終深刻體會到自由必須付出的代價。",
+      "clues": [
+        "舒適圈的代價：家貓在豪宅裡有美味食物與溫暖床鋪，但失去自由與獨立性。",
+        "自由的雙面性：野外充滿新鮮與刺激，但同時伴隨著生存競爭、惡劣天氣與飢餓風險。",
+        "寓言隱喻：貓的故事映射人類社會，探討我們願意為了「安全感」放棄多少自由，或為了「追夢」承擔多少代價。"
+      ],
+      "questions_guide": "思考題目時，請比較家貓在屋內與野外的利弊得失，並領會寓言背後對人生選擇的深層啟發。"
+    }
+  },
+  {
+    "id": 14,
+    "title": "自我情緒管理，情緒智商大爆發！",
+    "hint_overview": "實用心理學文章，提供提升情緒智商（EQ）與進行自我情緒調節的具體指引。",
+    "hints": {
+      "core": "情緒管理並非忍耐壓抑，而是透過「覺察情緒來源、停頓思考、轉念調節」，學會做自己情緒的主人，進而提升情緒智商（EQ）。",
+      "clues": [
+        "情緒觸發點（Triggers）：了解每個人引發憤怒或焦慮的按鈕不同，覺察是管理的第一步。",
+        "衝動反應與理性溝通：當情緒上湧時，大腦杏仁核會搶先反應，此時「停頓數秒」能讓理性的前額葉皮質接管。",
+        "轉念技巧：改變對事件的解釋方式（認知重塑），就能改變情緒反應結果。"
+      ],
+      "questions_guide": "解答時請注意文章提到的情緒管理步驟與正確觀念（如：承認情緒存在而非盲目壓抑）。"
+    }
+  },
+  {
+    "id": 15,
+    "title": "跨越「高原期」：給即將升八年級的你",
+    "hint_overview": "給國二學生的勵志心理指南，解析學業與心理瓶頸並提供突破方法。",
+    "hints": {
+      "core": "國二（八年級）常面臨「學習高原期」——新鮮感消退、課業難度激增、成績停滯不前。文章旨在安慰學生這非努力不足，而是大腦重組知識的必經過程。",
+      "clues": [
+        "高原期的定義：學習曲線中付出了努力卻看不到明顯進步的平坦階段。",
+        "心理困境：升上學長姐後身份轉變，加上人際關係複雜化與國二課程（如理化、深度國英文）的衝擊。",
+        "突破策略：調整學習方法（非死記硬背）、設定微小目標建立成就感、尋求同儕與師長支持。"
+      ],
+      "questions_guide": "重點在於理解「高原期是正常的學習過渡期」，並掌握突破該階段的正向心態與具體做法。"
+    }
+  },
+  {
+    "id": 16,
+    "title": "DW事實核查：如何識別「冒牌」新聞？",
+    "hint_overview": "媒體素養指引，教導大眾如何辨識網路上的偽造媒體與假新聞。",
+    "hints": {
+      "core": "不法份子常透過複製知名新聞媒體（如 DW、BBC）的標誌、排版與極其相似的網址（URL）來散播不實資訊。培養「交叉查證」能力是數位時代的必備素養。",
+      "clues": [
+        "冒牌手法：模仿品牌視覺、使用錯字網址（Typosquatting）、剪輯影片或使用 AI 偽造主播聲音。",
+        "查證黃金法則：1. 仔細檢查瀏覽器網址列；2. 尋找權威機構的二次確認；3. 使用專業事實查核網站。",
+        "媒體識讀心態：保持健康的懷疑態度，不輕易被聳動標題引發情感衝動而盲目轉發。"
+      ],
+      "questions_guide": "作答請緊扣「辨識假新聞的具體步驟」與「資訊來源真實性驗證」。"
+    }
+  },
+  {
+    "id": 17,
+    "title": "心理學入門：心理學到底在學什麼？",
+    "hint_overview": "科學科普文章，澄清大眾對心理學的誤解，建立對實證心理科學的正確認知。",
+    "hints": {
+      "core": "心理學絕非讀心術、算命或看穿人心，而是一門以科學方法（實驗、觀察、統計）研究「人類行為與心理過程」的嚴謹學門。",
+      "clues": [
+        "常見誤解：將心理學與星座、算命、讀心魔法混為一談。",
+        "歷史淵源：源自哲學對靈魂與意識的探討，後結合生物學與統計學成為獨立科學。",
+        "研究範疇：涵蓋感知覺、記憶力、學習歷程、情緒調節、發展心理學與社會行為等多個專業領域。"
+      ],
+      "questions_guide": "題目多考查「心理學與偽科學的界線」以及「心理學的科學實證本質」。"
+    }
+  },
+  {
+    "id": 18,
+    "title": "我所知道的康橋",
+    "hint_overview": "徐志摩經典名篇，透過詩意的語言描繪康橋清晨與自然的極致之美。",
+    "hints": {
+      "core": "文章透過細膩的感官摹寫與深情浪漫的筆觸，展現康橋清晨的寂靜、曙色、榆蔭與自然景緻，傳達作者對康橋靈性之美的沉醉與熱愛。",
+      "clues": [
+        "修辭與語言風格：富含音樂節奏感，使用諸如「水溶溶的大道」、「漠楞楞的曙色」、「點綴這周遭的沉默」等豐富色彩與聽覺視覺摹寫。",
+        "清晨意境：從牛奶車的鈴聲切入，襯托出朝晨的寧靜，再引導讀者走入煙霧與樹林交織的光影中。",
+        "情感主旨：康橋不只是風景，更是作者靈魂的棲息地與美感靈感的源頭。"
+      ],
+      "questions_guide": "答題重點在於賞析徐志摩的修辭手法（摹寫、層遞、襯托）以及文中流露的深厚情感。"
+    }
+  },
+  {
+    "id": 19,
+    "title": "土芭樂的生存之道",
+    "hint_overview": "觀察植物生態的抒情隨筆，藉土芭樂的堅韌生命力隱喻處世哲理。",
+    "hints": {
+      "core": "土芭樂雖然果實不如品種改良後的芭樂碩大甜美，但擁有極強的抗病力、適應力與濃郁果香，象徵著「紮根土地、順應自然、不求虛名」的生存智慧。",
+      "clues": [
+        "對比手法：將改良種的精緻碩大與土芭樂的樸實堅韌進行對比。",
+        "生命力展現：歷經十幾年風雨依然結實纍纍，展現強大的環境適應與自我保護能力。",
+        "人生啟示：外表或許不起眼，但只要認清自身優勢、堅守本心，便能展現獨特而美好的生命價值。"
+      ],
+      "questions_guide": "思考題目時，請注意作者如何「借物抒懷」，從土芭樂的生態特性聯想到人生的處世態度。"
+    }
+  },
+  {
+    "id": 20,
+    "title": "罐頭由來",
+    "hint_overview": "科技與歷史科普，講述罐頭保存技術的發明背景與演進歷程。",
+    "hints": {
+      "core": "罐頭的誕生源於戰爭軍糧保存的需求。從阿佩爾的玻璃瓶加熱密封，到馬口鐵罐的發明，這項技術徹底改變了人類的飲食保存與遠征冒險歷史。",
+      "clues": [
+        "歷史動機：拿破崙為了提供遠征軍隊新鮮營養的食物，高額懸賞食品保存法。",
+        "發明演進：法國阿佩爾（瓶裝加熱密封） ➔ 英國杜蘭德（發明鐵罐罐頭，更耐磕碰）。",
+        "科學原理：透過高溫加熱殺菌並完全隔絕空氣（密封），防止微生物滋生與食物腐敗。"
+      ],
+      "questions_guide": "作答時請關注罐頭發明的「時間脈絡」、「技術改進原因（玻璃瓶易碎 ➔ 鐵罐）」以及對後世的深遠影響。"
+    }
+  }
+];
+
+        // ------------------------------------------------------------------
+        // 2. 預設學生資料庫 (若 LocalStorage 無資料則自動載入)
+        // ------------------------------------------------------------------
+        const defaultStudents = [
+            { id: "s70701", name: "王大同", username: "70701", password: "123", totalQuota: 10, remainingQuota: 10, unlockedArticles: [] },
+            { id: "s70702", name: "李小花", username: "70702", password: "123", totalQuota: 10, remainingQuota: 8, unlockedArticles: [1, 3] },
+            { id: "s70703", name: "張明輝", username: "70703", password: "123", totalQuota: 15, remainingQuota: 15, unlockedArticles: [] },
+            { id: "s70704", name: "陳雅婷", username: "70704", password: "123", totalQuota: 10, remainingQuota: 5, unlockedArticles: [2, 5, 8, 10, 11] },
+            { id: "s70705", name: "林志豪", username: "70705", password: "123", totalQuota: 12, remainingQuota: 12, unlockedArticles: [] }
+        ];
+
+        // 全域狀態變數
+        let currentUser = null; // { role: 'admin' | 'student', studentId?: string, name?: string, username?: string }
+        let selectedArticleForUnlock = null;
+        let db = null; // Firebase Firestore Database 實例
+        let unsubscribeStudents = null; // 學生集合即時監聽
+        let unsubscribeLogs = null; // 歷史歷程即時監聽
+        let activityLogsList = []; // 本地與雲端備份之日誌數組
+
+        // ------------------------------------------------------------------
+        // 3. Firebase 雲端初始化與資料監聽
+        // ------------------------------------------------------------------
+        function initFirebase() {
+            const savedConfigStr = localStorage.getItem('qp_firebase_config');
+            if (savedConfigStr) {
+                try {
+                    const config = JSON.parse(savedConfigStr);
+                    if (!firebase.apps.length) {
+                        firebase.initializeApp(config);
+                    }
+                    db = firebase.firestore();
+                    updateCloudStatusUI(true);
+                    setupFirestoreListeners();
+                } catch(e) {
+                    console.error("Firebase 初始化失敗：", e);
+                    updateCloudStatusUI(false);
+                }
+            } else {
+                updateCloudStatusUI(false);
+            }
+        }
+
+        function updateCloudStatusUI(isOnline) {
+            const statusBadge = document.getElementById('cloudStatusBadge');
+            const alertBox = document.getElementById('firebaseAlertBox');
+            const alertText = document.getElementById('firebaseAlertText');
+            const btnPush = document.getElementById('btnPushCloud');
+
+            if (isOnline) {
+                statusBadge.className = "text-[10px] px-2 py-0.5 rounded-full font-medium status-badge-online flex items-center gap-1";
+                statusBadge.innerHTML = '<i data-lucide="wifi" class="w-3 h-3"></i><span>qpreadingtips 雲端連線中</span>';
+                if (alertBox) {
+                    alertBox.className = "bg-emerald-50 border border-emerald-200 text-emerald-900 p-3.5 rounded-xl text-xs flex items-center justify-between gap-2";
+                    alertText.innerText = "已順利連線至 Firebase qpreadingtips！所有裝置之登入、登出與閱讀提示點閱紀錄均會即時同步。";
+                }
+                if (btnPush) btnPush.classList.remove('hidden');
+            } else {
+                statusBadge.className = "text-[10px] px-2 py-0.5 rounded-full font-medium status-badge-offline flex items-center gap-1";
+                statusBadge.innerHTML = '<i data-lucide="wifi-off" class="w-3 h-3"></i><span>單機模式</span>';
+                if (alertBox) {
+                    alertBox.className = "bg-amber-50 border border-amber-200 text-amber-900 p-3.5 rounded-xl text-xs flex items-center justify-between gap-2";
+                    alertText.innerText = "目前為離線單機模式（僅存於本機瀏覽器）。點擊右上角「qpreadingtips Firebase 設定」可開啟跨裝置即時同步與紀錄監控！";
+                }
+                if (btnPush) btnPush.classList.add('hidden');
+            }
+            lucide.createIcons();
+        }
+
+        function setupFirestoreListeners() {
+            if (!db) return;
+            
+            // 監聽學生資料集合
+            if (unsubscribeStudents) unsubscribeStudents();
+            unsubscribeStudents = db.collection('students').onSnapshot((snapshot) => {
+                const cloudStudents = [];
+                snapshot.forEach(doc => {
+                    cloudStudents.push({ id: doc.id, ...doc.data() });
+                });
+
+                if (cloudStudents.length > 0) {
+                    localStorage.setItem('qp_reading_students', JSON.stringify(cloudStudents));
+                    if (currentUser) {
+                        updateUserUI();
+                    }
+                }
+            }, (error) => console.error("Firestore 學生資料監聽失敗：", error));
+
+            // 監聽歷史活動日誌集合
+            if (unsubscribeLogs) unsubscribeLogs();
+            unsubscribeLogs = db.collection('activity_logs').orderBy('timestamp', 'desc').limit(500).onSnapshot((snapshot) => {
+                const cloudLogs = [];
+                snapshot.forEach(doc => {
+                    cloudLogs.push({ id: doc.id, ...doc.data() });
+                });
+                activityLogsList = cloudLogs;
+                localStorage.setItem('qp_activity_logs', JSON.stringify(cloudLogs));
+                if (currentUser && currentUser.role === 'admin') {
+                    renderAdminLogTable();
+                }
+            }, (error) => console.error("Firestore 活動紀錄監聽失敗：", error));
+        }
+
+        // ------------------------------------------------------------------
+        // 4. 資料與日誌紀錄處理 (LocalStorage + Firestore)
+        // ------------------------------------------------------------------
+        function getStudentsData() {
+            const dataStr = localStorage.getItem('qp_reading_students');
+            if (!dataStr) {
+                localStorage.setItem('qp_reading_students', JSON.stringify(defaultStudents));
+                return defaultStudents;
+            }
+            try {
+                return JSON.parse(dataStr);
+            } catch(e) {
+                return defaultStudents;
+            }
+        }
+
+        function saveStudentsData(students) {
+            localStorage.setItem('qp_reading_students', JSON.stringify(students));
+
+            if (db) {
+                students.forEach(student => {
+                    db.collection('students').doc(student.id).set(student, { merge: true })
+                        .catch(err => console.error("同步至 Firebase 失敗:", err));
+                });
+            }
+        }
+
+        function deleteStudentFromFirestore(studentId) {
+            if (db) {
+                db.collection('students').doc(studentId).delete()
+                    .catch(err => console.error("從 Firebase 刪除學生失敗:", err));
+            }
+        }
+
+        function getActivityLogs() {
+            const logsStr = localStorage.getItem('qp_activity_logs');
+            if (logsStr) {
+                try {
+                    return JSON.parse(logsStr);
+                } catch(e) {
+                    return activityLogsList;
+                }
+            }
+            return activityLogsList;
+        }
+
+        function recordActivityLog(action, student, details = {}) {
+            const now = new Date();
+            const year = now.getFullYear();
+            const month = String(now.getMonth() + 1).padStart(2, '0');
+            const date = String(now.getDate()).padStart(2, '0');
+            const hours = String(now.getHours()).padStart(2, '0');
+            const minutes = String(now.getMinutes()).padStart(2, '0');
+            const seconds = String(now.getSeconds()).padStart(2, '0');
+            
+            const formattedTime = `${year}/${month}/${date} ${hours}:${minutes}:${seconds}`;
+
+            let actionLabel = "系統操作";
+            if (action === "LOGIN") actionLabel = "學生登入";
+            if (action === "LOGOUT") actionLabel = "學生登出";
+            if (action === "UNLOCK") actionLabel = "解鎖篇章提示";
+
+            const logEntry = {
+                id: "log_" + Date.now() + "_" + Math.random().toString(36).substr(2, 4),
+                studentId: student.id || "unknown",
+                studentName: student.name || "未知學生",
+                username: student.username || "guest",
+                action: action, // LOGIN | LOGOUT | UNLOCK
+                actionLabel: actionLabel,
+                articleId: details.articleId || null,
+                articleTitle: details.articleTitle || "",
+                detailsText: details.detailsText || "",
+                timestamp: now.toISOString(),
+                timestampFormatted: formattedTime
+            };
+
+            // 儲存於本地陣列
+            let localLogs = getActivityLogs();
+            localLogs.unshift(logEntry);
+            localStorage.setItem('qp_activity_logs', JSON.stringify(localLogs));
+            activityLogsList = localLogs;
+
+            // 寫入 Firebase Firestore
+            if (db) {
+                db.collection('activity_logs').doc(logEntry.id).set(logEntry)
+                    .catch(err => console.error("日誌寫入 Firebase 失敗:", err));
+            }
+        }
+
+        function syncLocalToFirebase() {
+            if (!db) return alert('未連線至 Firebase！');
+            const students = getStudentsData();
+            if (confirm(`確定要把本機的 ${students.length} 位學生資料全部覆蓋上傳至 Firebase 雲端嗎？`)) {
+                students.forEach(s => {
+                    db.collection('students').doc(s.id).set(s);
+                });
+                alert('已將本機資料全面同步至 Firebase 雲端！');
+            }
+        }
+
+        // ------------------------------------------------------------------
+        // 5. 初始化與 UI 流程掌控
+        // ------------------------------------------------------------------
+        window.addEventListener('DOMContentLoaded', () => {
+            lucide.createIcons();
+            initFirebase();
+
+            // 檢查 Session 登入狀態
+            const savedSession = sessionStorage.getItem('qp_reading_session');
+            if (savedSession) {
+                try {
+                    currentUser = JSON.parse(savedSession);
+                    updateUserUI();
+                } catch(e) {
+                    showLoginSection();
+                }
+            } else {
+                showLoginSection();
+            }
+        });
+
+        function switchLoginTab(role) {
+            document.getElementById('loginRole').value = role;
+            const tabStudent = document.getElementById('tabStudent');
+            const tabAdmin = document.getElementById('tabAdmin');
+            const usernameInput = document.getElementById('loginUsername');
+            const passwordInput = document.getElementById('loginPassword');
+
+            if (role === 'student') {
+                tabStudent.className = "flex-1 py-2.5 text-center text-sm font-medium border-b-2 border-indigo-600 text-indigo-600 transition";
+                tabAdmin.className = "flex-1 py-2.5 text-center text-sm font-medium border-b-2 border-transparent text-slate-500 hover:text-slate-700 transition";
+                usernameInput.placeholder = "請輸入學生帳號 (如: 70701)";
+                passwordInput.placeholder = "請輸入學生密碼";
+            } else {
+                tabAdmin.className = "flex-1 py-2.5 text-center text-sm font-medium border-b-2 border-indigo-600 text-indigo-600 transition";
+                tabStudent.className = "flex-1 py-2.5 text-center text-sm font-medium border-b-2 border-transparent text-slate-500 hover:text-slate-700 transition";
+                usernameInput.placeholder = "請輸入管理員帳號 (admin)";
+                passwordInput.placeholder = "請輸入管理員密碼";
+            }
+            document.getElementById('loginError').classList.add('hidden');
+        }
+
+        function handleLogin(event) {
+            event.preventDefault();
+            const role = document.getElementById('loginRole').value;
+            const username = document.getElementById('loginUsername').value.trim();
+            const password = document.getElementById('loginPassword').value.trim();
+            const errorBox = document.getElementById('loginError');
+            const errorText = document.getElementById('loginErrorText');
+
+            errorBox.classList.add('hidden');
+
+            if (role === 'admin') {
+                if (username === 'admin' && password === 'readingadmin') {
+                    currentUser = { role: 'admin', name: '管理員 / 教師', username: 'admin' };
+                    sessionStorage.setItem('qp_reading_session', JSON.stringify(currentUser));
+                    updateUserUI();
+                } else {
+                    errorText.innerText = "管理員帳號或密碼不正確！";
+                    errorBox.classList.remove('hidden');
+                }
+            } else {
+                const students = getStudentsData();
+                const student = students.find(s => s.username === username && s.password === password);
+                if (student) {
+                    currentUser = { role: 'student', studentId: student.id, name: student.name, username: student.username };
+                    sessionStorage.setItem('qp_reading_session', JSON.stringify(currentUser));
+                    
+                    // 記錄學生登入日誌！
+                    recordActivityLog('LOGIN', student, { detailsText: "成功登入系統" });
+
+                    updateUserUI();
+                } else {
+                    errorText.innerText = "學生帳號或密碼錯誤，請重新確認！";
+                    errorBox.classList.remove('hidden');
+                }
+            }
+        }
+
+        function logout() {
+            if (currentUser && currentUser.role === 'student') {
+                const students = getStudentsData();
+                const student = students.find(s => s.id === currentUser.studentId) || currentUser;
+                // 記錄學生登出日誌！
+                recordActivityLog('LOGOUT', student, { detailsText: "主動登出系統" });
+            }
+
+            sessionStorage.removeItem('qp_reading_session');
+            currentUser = null;
+            showLoginSection();
+        }
+
+        function showLoginSection() {
+            document.getElementById('userInfoBar').classList.add('hidden');
+            document.getElementById('loginSection').classList.remove('hidden');
+            document.getElementById('studentSection').classList.add('hidden');
+            document.getElementById('adminSection').classList.add('hidden');
+        }
+
+        function updateUserUI() {
+            if (!currentUser) return showLoginSection();
+
+            document.getElementById('loginSection').classList.add('hidden');
+            document.getElementById('userInfoBar').classList.remove('hidden');
+
+            if (currentUser.role === 'admin') {
+                document.getElementById('userNameDisplay').innerText = currentUser.name;
+                document.getElementById('userRoleDisplay').innerText = "系統管理者";
+                document.getElementById('studentQuotaBadge').classList.add('hidden');
+                document.getElementById('studentSection').classList.add('hidden');
+                document.getElementById('adminSection').classList.remove('hidden');
+                renderAdminStudentTable();
+                renderAdminLogTable();
+            } else {
+                // 學生 UI
+                const students = getStudentsData();
+                const student = students.find(s => s.id === currentUser.studentId);
+                if (!student) {
+                    logout();
+                    return;
+                }
+                document.getElementById('userNameDisplay').innerText = student.name + " 同學";
+                document.getElementById('userRoleDisplay').innerText = "帳號：" + student.username;
+                document.getElementById('studentQuotaBadge').classList.remove('hidden');
+                document.getElementById('quotaDisplay').innerText = student.remainingQuota;
+                document.getElementById('bannerQuotaDisplay').innerText = student.remainingQuota;
+
+                document.getElementById('adminSection').classList.add('hidden');
+                document.getElementById('studentSection').classList.remove('hidden');
+                renderStudentArticlesGrid(student);
+            }
+            lucide.createIcons();
+        }
+
+        // ------------------------------------------------------------------
+        // 6. 學生端功能：渲染 20 篇測驗卡片與解鎖提示
+        // ------------------------------------------------------------------
+        function renderStudentArticlesGrid(student) {
+            const grid = document.getElementById('articlesGrid');
+            grid.innerHTML = '';
+
+            articlesData.forEach(article => {
+                const isUnlocked = student.unlockedArticles && student.unlockedArticles.includes(article.id);
+                
+                const card = document.createElement('div');
+                card.className = `bg-white rounded-2xl p-5 border shadow-sm hover:shadow-md transition flex flex-col justify-between ${
+                    isUnlocked ? 'border-emerald-200 bg-emerald-50/20' : 'border-slate-200'
+                }`;
+
+                card.innerHTML = `
+                    <div>
+                        <div class="flex justify-between items-start mb-2">
+                            <span class="text-xs font-bold ${isUnlocked ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-600'} px-2.5 py-1 rounded-full flex items-center gap-1">
+                                <i data-lucide="${isUnlocked ? 'check-circle' : 'lock'}" class="w-3.5 h-3.5"></i>
+                                ${isUnlocked ? '已解鎖提示' : '需 1 篇額度'}
+                            </span>
+                            <span class="text-xs text-slate-400 font-medium">第 ${article.id} 篇</span>
+                        </div>
+                        <h3 class="text-base font-bold text-slate-800 hover:text-indigo-600 transition cursor-pointer" onclick="handleArticleClick(${article.id})">
+                            ${article.title}
+                        </h3>
+                        <p class="text-xs text-slate-500 mt-2 line-clamp-2 leading-relaxed">
+                            ${article.hint_overview}
+                        </p>
+                    </div>
+
+                    <div class="mt-4 pt-3 border-t border-slate-100 flex justify-between items-center">
+                        <span class="text-xs text-slate-400">
+                            ${isUnlocked ? '點擊即可重複查看' : '尚未解鎖'}
+                        </span>
+                        <button onclick="handleArticleClick(${article.id})" class="text-xs font-bold ${
+                            isUnlocked ? 'bg-emerald-600 hover:bg-emerald-700 text-white' : 'bg-indigo-600 hover:bg-indigo-700 text-white'
+                        } px-3.5 py-1.5 rounded-lg shadow-sm transition flex items-center space-x-1">
+                            <span>${isUnlocked ? '觀看提示' : '解鎖提示'}</span>
+                            <i data-lucide="${isUnlocked ? 'book-open' : 'key'}" class="w-3.5 h-3.5"></i>
+                        </button>
+                    </div>
+                `;
+                grid.appendChild(card);
+            });
+
+            lucide.createIcons();
+        }
+
+        function handleArticleClick(articleId) {
+            const students = getStudentsData();
+            const student = students.find(s => s.id === currentUser.studentId);
+            if (!student) return;
+
+            const article = articlesData.find(a => a.id === articleId);
+            if (!article) return;
+
+            const isUnlocked = student.unlockedArticles && student.unlockedArticles.includes(article.id);
+
+            if (isUnlocked) {
+                openHintModal(article);
+            } else {
+                selectedArticleForUnlock = article;
+                document.getElementById('modalArticleTitle').innerText = article.title;
+                document.getElementById('modalCurrentQuota').innerText = student.remainingQuota;
+
+                const confirmBtn = document.getElementById('btnConfirmUnlock');
+                if (student.remainingQuota <= 0) {
+                    confirmBtn.disabled = true;
+                    confirmBtn.className = "flex-1 py-2 text-xs font-medium bg-slate-300 text-slate-500 rounded-lg cursor-not-allowed";
+                    confirmBtn.innerText = "額度不足，無法解鎖";
+                } else {
+                    confirmBtn.disabled = false;
+                    confirmBtn.className = "flex-1 py-2 text-xs font-medium bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg shadow transition";
+                    confirmBtn.innerText = "確定使用 1 篇";
+                }
+
+                document.getElementById('confirmModal').classList.remove('hidden');
+            }
+        }
+
+        function closeConfirmModal() {
+            document.getElementById('confirmModal').classList.add('hidden');
+            selectedArticleForUnlock = null;
+        }
+
+        function executeUnlockArticle() {
+            if (!selectedArticleForUnlock) return;
+
+            let students = getStudentsData();
+            let student = students.find(s => s.id === currentUser.studentId);
+
+            if (student && student.remainingQuota > 0) {
+                student.remainingQuota -= 1;
+                if (!student.unlockedArticles) student.unlockedArticles = [];
+                student.unlockedArticles.push(selectedArticleForUnlock.id);
+
+                saveStudentsData(students);
+
+                // 記錄使用閱讀提示日誌！
+                recordActivityLog('UNLOCK', student, {
+                    articleId: selectedArticleForUnlock.id,
+                    articleTitle: selectedArticleForUnlock.title,
+                    detailsText: `使用了 1 篇額度，解鎖第 ${selectedArticleForUnlock.id} 篇《${selectedArticleForUnlock.title}》提示`
+                });
+
+                closeConfirmModal();
+                updateUserUI(); // 刷新 UI
+
+                // 立即開啟提示視窗
+                openHintModal(selectedArticleForUnlock);
+            }
+        }
+
+        function openHintModal(article) {
+            document.getElementById('hintModalTitle').innerText = article.title;
+            document.getElementById('hintOverviewText').innerText = article.hint_overview;
+            document.getElementById('hintCoreText').innerText = article.hints.core;
+
+            const list = document.getElementById('hintCluesList');
+            list.innerHTML = '';
+            article.hints.clues.forEach((clue, idx) => {
+                const li = document.createElement('li');
+                li.className = "flex items-start gap-2 bg-slate-50 p-2.5 rounded-lg border border-slate-200/60";
+                li.innerHTML = `
+                    <span class="bg-indigo-100 text-indigo-700 font-bold rounded-full w-5 h-5 flex items-center justify-center flex-shrink-0 text-xs">
+                        ${idx + 1}
+                    </span>
+                    <span class="leading-relaxed">${clue}</span>
+                `;
+                list.appendChild(li);
+            });
+
+            document.getElementById('hintQuestionsGuideText').innerText = article.hints.questions_guide;
+            document.getElementById('hintModal').classList.remove('hidden');
+            lucide.createIcons();
+        }
+
+        function closeHintModal() {
+            document.getElementById('hintModal').classList.add('hidden');
+        }
+
+        // ------------------------------------------------------------------
+        // 7. 管理員端功能：學生管理與歷史歷程監控
+        // ------------------------------------------------------------------
+        function switchAdminMainTab(tabName) {
+            const btnStudents = document.getElementById('adminTabStudents');
+            const btnLogs = document.getElementById('adminTabLogs');
+            const panelStudents = document.getElementById('adminStudentsPanel');
+            const panelLogs = document.getElementById('adminLogsPanel');
+
+            if (tabName === 'students') {
+                btnStudents.className = "py-3 px-6 text-sm font-bold border-b-2 border-indigo-600 text-indigo-600 flex items-center space-x-2 transition";
+                btnLogs.className = "py-3 px-6 text-sm font-bold border-b-2 border-transparent text-slate-500 hover:text-slate-700 flex items-center space-x-2 transition";
+                panelStudents.classList.remove('hidden');
+                panelLogs.classList.add('hidden');
+            } else {
+                btnLogs.className = "py-3 px-6 text-sm font-bold border-b-2 border-indigo-600 text-indigo-600 flex items-center space-x-2 transition";
+                btnStudents.className = "py-3 px-6 text-sm font-bold border-b-2 border-transparent text-slate-500 hover:text-slate-700 flex items-center space-x-2 transition";
+                panelStudents.classList.add('hidden');
+                panelLogs.classList.remove('hidden');
+                renderAdminLogTable();
+            }
+        }
+
+        function renderAdminStudentTable() {
+            const students = getStudentsData();
+            const searchKeyword = document.getElementById('searchStudentInput').value.trim().toLowerCase();
+            const tbody = document.getElementById('studentTableBody');
+            tbody.innerHTML = '';
+
+            const filtered = students.filter(s => 
+                s.name.toLowerCase().includes(searchKeyword) || 
+                s.username.toLowerCase().includes(searchKeyword)
+            );
+
+            document.getElementById('totalStudentCount').innerText = students.length;
+
+            if (filtered.length === 0) {
+                tbody.innerHTML = `
+                    <tr>
+                        <td colspan="6" class="text-center py-8 text-slate-400">
+                            尚未找到符合條件的學生資料
+                        </td>
+                    </tr>
+                `;
+                return;
+            }
+
+            filtered.forEach(s => {
+                const unlockedCount = s.unlockedArticles ? s.unlockedArticles.length : 0;
+                const tr = document.createElement('tr');
+                tr.className = "hover:bg-slate-50 transition border-b border-slate-100";
+
+                tr.innerHTML = `
+                    <td class="py-3 px-4 font-bold text-slate-800">
+                        ${s.name}
+                        <div class="text-[10px] text-slate-400 font-normal">已解鎖 ${unlockedCount} 篇</div>
+                    </td>
+                    <td class="py-3 px-4">
+                        <span class="font-mono text-slate-600 bg-slate-100 px-1.5 py-0.5 rounded">${s.username}</span>
+                        <span class="text-slate-400 text-[11px] ml-1">/ ${s.password}</span>
+                    </td>
+                    <td class="py-3 px-4 text-slate-600 font-medium">
+                        ${s.totalQuota} 篇
+                    </td>
+                    <td class="py-3 px-4">
+                        <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold ${
+                            s.remainingQuota > 0 ? 'bg-indigo-100 text-indigo-800' : 'bg-red-100 text-red-800'
+                        }">
+                            ${s.remainingQuota} 篇
+                        </span>
+                    </td>
+                    <td class="py-3 px-4">
+                        <div class="flex items-center space-x-1">
+                            <button onclick="adjustStudentQuota('${s.id}', -1)" class="w-6 h-6 bg-slate-200 hover:bg-red-100 hover:text-red-600 rounded text-slate-700 font-bold transition flex items-center justify-center" title="-1 篇">-1</button>
+                            <button onclick="adjustStudentQuota('${s.id}', 1)" class="w-6 h-6 bg-indigo-100 hover:bg-indigo-200 text-indigo-700 rounded font-bold transition flex items-center justify-center" title="+1 篇">+1</button>
+                            <button onclick="adjustStudentQuota('${s.id}', 5)" class="px-1.5 h-6 bg-indigo-600 hover:bg-indigo-700 text-white rounded font-bold text-[10px] transition flex items-center justify-center" title="+5 篇">+5</button>
+                        </div>
+                    </td>
+                    <td class="py-3 px-4 text-right">
+                        <div class="flex items-center justify-end space-x-2">
+                            <button onclick="openEditStudentModal('${s.id}')" class="text-indigo-600 hover:text-indigo-800 font-medium" title="編輯">
+                                <i data-lucide="edit-3" class="w-4 h-4"></i>
+                            </button>
+                            <button onclick="deleteStudent('${s.id}')" class="text-slate-400 hover:text-red-600 font-medium" title="刪除">
+                                <i data-lucide="trash-2" class="w-4 h-4"></i>
+                            </button>
+                        </div>
+                    </td>
+                `;
+                tbody.appendChild(tr);
+            });
+
+            lucide.createIcons();
+        }
+
+        function renderAdminLogTable() {
+            const logs = getActivityLogs();
+            const searchKeyword = document.getElementById('searchLogInput').value.trim().toLowerCase();
+            const actionFilter = document.getElementById('filterLogAction').value;
+            const tbody = document.getElementById('logTableBody');
+            tbody.innerHTML = '';
+
+            const filtered = logs.filter(log => {
+                const matchKeyword = log.studentName.toLowerCase().includes(searchKeyword) ||
+                                     log.username.toLowerCase().includes(searchKeyword) ||
+                                     log.articleTitle.toLowerCase().includes(searchKeyword) ||
+                                     log.detailsText.toLowerCase().includes(searchKeyword);
+                const matchAction = (actionFilter === 'ALL') || (log.action === actionFilter);
+                return matchKeyword && matchAction;
+            });
+
+            if (filtered.length === 0) {
+                tbody.innerHTML = `
+                    <tr>
+                        <td colspan="5" class="text-center py-8 text-slate-400">
+                            尚無符合條件的活動歷程紀錄
+                        </td>
+                    </tr>
+                `;
+                return;
+            }
+
+            filtered.forEach(log => {
+                const tr = document.createElement('tr');
+                tr.className = "hover:bg-slate-50 transition border-b border-slate-100";
+
+                let badgeClass = "badge-login";
+                if (log.action === "LOGOUT") badgeClass = "badge-logout";
+                if (log.action === "UNLOCK") badgeClass = "badge-unlock";
+
+                tr.innerHTML = `
+                    <td class="py-3 px-4 font-mono text-slate-500 text-[11px] whitespace-nowrap">
+                        ${log.timestampFormatted}
+                    </td>
+                    <td class="py-3 px-4 font-bold text-slate-800 whitespace-nowrap">
+                        ${log.studentName}
+                    </td>
+                    <td class="py-3 px-4 whitespace-nowrap">
+                        <span class="font-mono bg-slate-100 px-1.5 py-0.5 rounded text-slate-600">${log.username}</span>
+                    </td>
+                    <td class="py-3 px-4 whitespace-nowrap">
+                        <span class="text-[11px] px-2 py-0.5 rounded-full font-bold ${badgeClass}">
+                            ${log.actionLabel}
+                        </span>
+                    </td>
+                    <td class="py-3 px-4 text-slate-600 leading-relaxed">
+                        ${log.detailsText || (log.articleTitle ? `解鎖《${log.articleTitle}》` : '-')}
+                    </td>
+                `;
+                tbody.appendChild(tr);
+            });
+
+            lucide.createIcons();
+        }
+
+        function exportLogsCSV() {
+            const logs = getActivityLogs();
+            if (logs.length === 0) return alert('目前沒有任何歷程紀錄可供匯出！');
+
+            let csvContent = "\uFEFF時間戳記,學生姓名,帳號,動作類別,詳細說明\n";
+            logs.forEach(l => {
+                const detailsStr = (l.detailsText || l.articleTitle || '').replace(/"/g, '""');
+                csvContent += `"${l.timestampFormatted}","${l.studentName}","${l.username}","${l.actionLabel}","${detailsStr}"\n`;
+            });
+
+            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement("a");
+            const url = URL.createObjectURL(blob);
+            link.setAttribute("href", url);
+            link.setAttribute("download", `青埔國中學生閱讀歷程監控_${new Date().toISOString().slice(0,10)}.csv`);
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+
+        function clearAllLogs() {
+            if (confirm('確定要清除所有的歷史紀錄嗎？（本地與雲端記錄均將重置）')) {
+                activityLogsList = [];
+                localStorage.removeItem('qp_activity_logs');
+                if (db) {
+                    db.collection('activity_logs').get().then(snapshot => {
+                        snapshot.forEach(doc => doc.ref.delete());
+                    });
+                }
+                renderAdminLogTable();
+                alert('歷程紀錄已成功清空！');
+            }
+        }
+
+        function adjustStudentQuota(studentId, delta) {
+            let students = getStudentsData();
+            let student = students.find(s => s.id === studentId);
+            if (student) {
+                student.remainingQuota = Math.max(0, student.remainingQuota + delta);
+                if (delta > 0 && student.remainingQuota > student.totalQuota) {
+                    student.totalQuota = student.remainingQuota;
+                }
+                saveStudentsData(students);
+                renderAdminStudentTable();
+            }
+        }
+
+        function openAddStudentModal() {
+            document.getElementById('studentFormTitle').innerText = "新增學生帳號";
+            document.getElementById('editStudentId').value = "";
+            document.getElementById('studentFormName').value = "";
+            document.getElementById('studentFormUsername').value = "";
+            document.getElementById('studentFormPassword').value = "123";
+            document.getElementById('studentFormTotalQuota').value = 10;
+            document.getElementById('studentFormRemainingQuota').value = 10;
+            document.getElementById('addStudentModal').classList.remove('hidden');
+        }
+
+        function openEditStudentModal(studentId) {
+            const students = getStudentsData();
+            const student = students.find(s => s.id === studentId);
+            if (!student) return;
+
+            document.getElementById('studentFormTitle').innerText = "編輯學生資料";
+            document.getElementById('editStudentId').value = student.id;
+            document.getElementById('studentFormName').value = student.name;
+            document.getElementById('studentFormUsername').value = student.username;
+            document.getElementById('studentFormPassword').value = student.password;
+            document.getElementById('studentFormTotalQuota').value = student.totalQuota;
+            document.getElementById('studentFormRemainingQuota').value = student.remainingQuota;
+            document.getElementById('addStudentModal').classList.remove('hidden');
+        }
+
+        function closeAddStudentModal() {
+            document.getElementById('addStudentModal').classList.add('hidden');
+        }
+
+        function saveStudentForm(event) {
+            event.preventDefault();
+            const editId = document.getElementById('editStudentId').value;
+            const name = document.getElementById('studentFormName').value.trim();
+            const username = document.getElementById('studentFormUsername').value.trim();
+            const password = document.getElementById('studentFormPassword').value.trim();
+            const totalQuota = parseInt(document.getElementById('studentFormTotalQuota').value, 10);
+            const remainingQuota = parseInt(document.getElementById('studentFormRemainingQuota').value, 10);
+
+            let students = getStudentsData();
+
+            if (editId) {
+                let student = students.find(s => s.id === editId);
+                if (student) {
+                    student.name = name;
+                    student.username = username;
+                    student.password = password;
+                    student.totalQuota = totalQuota;
+                    student.remainingQuota = remainingQuota;
+                }
+            } else {
+                const newId = 's' + Date.now();
+                students.push({
+                    id: newId,
+                    name: name,
+                    username: username,
+                    password: password,
+                    totalQuota: totalQuota,
+                    remainingQuota: remainingQuota,
+                    unlockedArticles: []
+                });
+            }
+
+            saveStudentsData(students);
+            closeAddStudentModal();
+            renderAdminStudentTable();
+        }
+
+        function deleteStudent(studentId) {
+            if (confirm('確定要刪除這位學生的帳號嗎？此操作不可復原。')) {
+                let students = getStudentsData();
+                students = students.filter(s => s.id !== studentId);
+                saveStudentsData(students);
+                deleteStudentFromFirestore(studentId);
+                renderAdminStudentTable();
+            }
+        }
+
+        // ------------------------------------------------------------------
+        // 8. Firebase 雲端連線設定與 JSON 備份
+        // ------------------------------------------------------------------
+        function openFirebaseConfigModal() {
+            const savedConfigStr = localStorage.getItem('qp_firebase_config') || '';
+            document.getElementById('firebaseConfigTextarea').value = savedConfigStr;
+            document.getElementById('firebaseConfigModal').classList.remove('hidden');
+        }
+
+        function closeFirebaseConfigModal() {
+            document.getElementById('firebaseConfigModal').classList.add('hidden');
+        }
+
+        function saveFirebaseSettings() {
+            const configText = document.getElementById('firebaseConfigTextarea').value.trim();
+
+            if (!configText) {
+                localStorage.removeItem('qp_firebase_config');
+                db = null;
+                updateCloudStatusUI(false);
+                alert('已移除 Firebase 雲端設定，系統恢復為離線單機模式！');
+                closeFirebaseConfigModal();
+                return;
+            }
+
+            try {
+                const configObj = JSON.parse(configText);
+                if (!configObj.apiKey || !configObj.projectId) {
+                    throw new Error("缺少 apiKey 或 projectId");
+                }
+                localStorage.setItem('qp_firebase_config', JSON.stringify(configObj));
+                initFirebase();
+                alert('qpreadingtips Firebase 雲端連線設定成功！所有學生活動日誌已開啟跨裝置即時監控。');
+                closeFirebaseConfigModal();
+            } catch(e) {
+                alert('Firebase Config 格式錯誤，請確定貼上的是正確的 JSON 物件格式！');
+            }
+        }
+
+        function exportStudentDataJSON() {
+            const students = getStudentsData();
+            const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(students, null, 2));
+            const dlAnchor = document.createElement('a');
+            dlAnchor.setAttribute("href", dataStr);
+            dlAnchor.setAttribute("download", `青埔國中閱讀系統學生資料_${new Date().toISOString().slice(0,10)}.json`);
+            document.body.appendChild(dlAnchor);
+            dlAnchor.click();
+            dlAnchor.remove();
+        }
+
+        function importStudentDataJSON(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    const imported = JSON.parse(e.target.result);
+                    if (Array.isArray(imported)) {
+                        saveStudentsData(imported);
+                        alert('學生資料匯入成功！');
+                        renderAdminStudentTable();
+                    } else {
+                        alert('JSON 格式不符，請確認匯入正確的備份檔！');
+                    }
+                } catch(err) {
+                    alert('讀取 JSON 檔案失敗！');
+                }
+            };
+            reader.readAsText(file);
+        }
+    </script>
+</body>
 </html>
