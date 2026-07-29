@@ -3,24 +3,30 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>青埔國中閱讀測驗提示系統 (qpreadingtips - Firebase 雲端歷程監控版)</title>
-    <!-- Tailwind CSS -->
+    <title>青埔國中閱讀測驗提示系統 (qpreadingtips - Realtime Database & Firestore 雙模支援版)</title>
+    <!-- Tailwind CSS CDN -->
     <script src="https://cdn.tailwindcss.com"></script>
-    <!-- Lucide Icons -->
+    <!-- Lucide Icons CDN -->
     <script src="https://unpkg.com/lucide@latest"></script>
-    <!-- Firebase JS SDK (Compat version for single-file HTML) -->
+    <!-- Firebase JS SDK Compatibility Version (支援 Realtime Database 與 Firestore) -->
     <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-database-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@300;400;500;700&display=swap');
+        
         body {
             font-family: 'Noto Sans TC', sans-serif;
             background-color: #f8fafc;
         }
+
+        /* 彈出視窗遮罩模糊背景 */
         .modal-bg {
             background-color: rgba(15, 23, 42, 0.6);
             backdrop-filter: blur(4px);
         }
+
+        /* 自訂捲軸樣式 */
         .custom-scrollbar::-webkit-scrollbar {
             width: 6px;
         }
@@ -31,6 +37,8 @@
             background: #cbd5e1;
             border-radius: 3px;
         }
+
+        /* 連線狀態標籤樣式 */
         .status-badge-online {
             background-color: #dcfce7;
             color: #166534;
@@ -41,6 +49,8 @@
             color: #475569;
             border: 1px solid #e2e8f0;
         }
+
+        /* 歷程標籤視覺美化 */
         .badge-login {
             background-color: #e0f2fe;
             color: #0369a1;
@@ -75,7 +85,7 @@
                             <span>單機模式</span>
                         </span>
                     </div>
-                    <p class="text-xs text-slate-500">專案名稱：qpreadingtips | 學生登入/登出與閱讀提示紀錄監控</p>
+                    <p class="text-xs text-slate-500">專案名稱：qpreadingtips | 支援 Realtime Database 即時同步與歷史監控</p>
                 </div>
             </div>
 
@@ -180,7 +190,7 @@
                 <div>
                     <h2 class="text-xl font-bold text-slate-800 flex items-center gap-2">
                         <i data-lucide="shield-check" class="w-6 h-6 text-indigo-600"></i>
-                        <span>學生閱讀額度與活動監控後台 (qpreadingtips)</span>
+                        <span>學生閱讀額度與活動監控後台 (qpreadingtips - RTDB 啟用)</span>
                     </h2>
                     <p class="text-xs text-slate-500 mt-0.5">可管理學生帳號額度，並可即時查詢學生登入、登出與提示點閱歷程。</p>
                 </div>
@@ -197,12 +207,12 @@
             </div>
 
             <!-- Firebase 雲端狀態提示條 -->
-            <div id="firebaseAlertBox" class="bg-amber-50 border border-amber-200 text-amber-900 p-3.5 rounded-xl text-xs flex items-center justify-between gap-2">
+            <div id="firebaseAlertBox" class="bg-emerald-50 border border-emerald-200 text-emerald-900 p-3.5 rounded-xl text-xs flex items-center justify-between gap-2">
                 <div class="flex items-center gap-2">
-                    <i data-lucide="info" class="w-4 h-4 text-amber-600 flex-shrink-0"></i>
-                    <span id="firebaseAlertText">目前為離線單機模式（僅存於本機瀏覽器）。點擊右上角「qpreadingtips Firebase 設定」可開啟跨裝置即時同步與紀錄監控！</span>
+                    <i data-lucide="info" class="w-4 h-4 text-emerald-600 flex-shrink-0"></i>
+                    <span id="firebaseAlertText">已載入 qpreadingtips Realtime Database 免信用卡模式！所有裝置之學生登入、登出與提示點閱紀錄均會即時同步至雲端。</span>
                 </div>
-                <button onclick="openFirebaseConfigModal()" class="underline font-bold hover:text-amber-700 whitespace-nowrap">前往設定</button>
+                <button onclick="openFirebaseConfigModal()" class="underline font-bold hover:text-emerald-700 whitespace-nowrap">檢視 / 變更設定</button>
             </div>
 
             <!-- 後台功能切換頁籤：帳號管理 vs 活動歷程紀錄 -->
@@ -226,7 +236,7 @@
                     </div>
                     <div class="flex items-center space-x-3 text-xs text-slate-500">
                         <span>總學生數：<strong id="totalStudentCount" class="text-slate-700">0</strong> 人</span>
-                        <button onclick="syncLocalToFirebase()" id="btnPushCloud" class="hidden text-indigo-600 hover:text-indigo-800 underline font-medium">推送到 qpreadingtips 雲端</button>
+                        <button onclick="syncLocalToFirebase()" id="btnPushCloud" class="text-indigo-600 hover:text-indigo-800 underline font-medium">推送到 qpreadingtips 雲端</button>
                     </div>
                 </div>
 
@@ -446,19 +456,12 @@
             
             <div class="space-y-4 text-xs text-slate-600">
                 <p class="leading-relaxed bg-amber-50 text-amber-900 p-3 rounded-xl border border-amber-100">
-                    請將 Firebase 控制台專案 <code class="bg-white px-1 rounded font-mono font-bold text-amber-900">qpreadingtips</code> 所提供的 SDK Configuration 貼於下方，系統會自動在 Firestore 的 <code class="bg-white px-1 rounded font-mono">students</code> 與 <code class="bg-white px-1 rounded font-mono">activity_logs</code> 集合進行即時同步！
+                    目前已內建 Realtime Database 與 Firestore 雙向支援金鑰！系統優先使用免費且不需特權的 Realtime Database 同步 <code class="bg-white px-1 rounded font-mono font-bold text-amber-900">students</code> 與 <code class="bg-white px-1 rounded font-mono">activity_logs</code> 節點。
                 </p>
 
                 <div>
-                    <label class="block font-medium text-slate-700 mb-1">Firebase SDK Configuration (貼上 JSON 變數)</label>
-                    <textarea id="firebaseConfigTextarea" rows="6" class="w-full px-3 py-2 font-mono text-[11px] border border-slate-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:outline-none" placeholder='{
-  "apiKey": "AIzaSy...",
-  "authDomain": "qpreadingtips.firebaseapp.com",
-  "projectId": "qpreadingtips",
-  "storageBucket": "qpreadingtips.appspot.com",
-  "messagingSenderId": "123456789",
-  "appId": "1:123456789:web:abcdef"
-}'></textarea>
+                    <label class="block font-medium text-slate-700 mb-1">Firebase SDK Configuration (JSON 格式)</label>
+                    <textarea id="firebaseConfigTextarea" rows="8" class="w-full px-3 py-2 font-mono text-[11px] border border-slate-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:outline-none"></textarea>
                 </div>
 
                 <div class="pt-2 border-t border-slate-200 flex flex-col sm:flex-row gap-2">
@@ -484,12 +487,26 @@
 
     <!-- 頁尾 -->
     <footer class="bg-white border-t border-slate-200 py-4 text-center text-xs text-slate-400 mt-auto">
-        <p>114 桃園市立青埔國中 - 綜合閱讀測驗提示系統 &copy; 2026 (Firebase: qpreadingtips)</p>
+        <p>114 桃園市立青埔國中 - 綜合閱讀測驗提示系統 &copy; 2026 (Firebase Project: qpreadingtips - RTDB Compatible)</p>
     </footer>
 
 
     <!-- 核心 JS 邏輯 -->
     <script>
+        // ------------------------------------------------------------------
+        // 0. 內建預設 Firebase Config (包含 databaseURL 支援 Realtime Database)
+        // ------------------------------------------------------------------
+        const defaultFirebaseConfig = {
+            apiKey: "AIzaSyAjL74PO9sViOSvrV1zqD_BxePczm7t5OU",
+            authDomain: "qpreadingtips.firebaseapp.com",
+            databaseURL: "https://qpreadingtips-default-rtdb.asia-southeast1.firebasedatabase.app",
+            projectId: "qpreadingtips",
+            storageBucket: "qpreadingtips.firebasestorage.app",
+            messagingSenderId: "394162740214",
+            appId: "1:394162740214:web:5f80bdf29a1f72d1e5c5d7",
+            measurementId: "G-WESWHFW41R"
+        };
+
         // ------------------------------------------------------------------
         // 1. 20 篇閱讀測驗完整的詳細提示資料集
         // ------------------------------------------------------------------
@@ -698,7 +715,7 @@
       "core": "國二（八年級）常面臨「學習高原期」——新鮮感消退、課業難度激增、成績停滯不前。文章旨在安慰學生這非努力不足，而是大腦重組知識的必經過程。",
       "clues": [
         "高原期的定義：學習曲線中付出了努力卻看不到明顯進步的平坦階段。",
-        "心理困境：升上學長姐後身份轉變，加上人際關係複雜化與國二課程（如理化、深度國英文）的衝擊。",
+        "心理困境：升上學學姐後身份轉變，加上人際關係複雜化與國二課程（如理化、深度國英文）的衝擊。",
         "突破策略：調整學習方法（非死記硬背）、設定微小目標建立成就感、尋求同儕與師長支持。"
       ],
       "questions_guide": "重點在於理解「高原期是正常的學習過渡期」，並掌握突破該階段的正向心態與具體做法。"
@@ -790,35 +807,52 @@
         // 全域狀態變數
         let currentUser = null; // { role: 'admin' | 'student', studentId?: string, name?: string, username?: string }
         let selectedArticleForUnlock = null;
-        let db = null; // Firebase Firestore Database 實例
-        let unsubscribeStudents = null; // 學生集合即時監聽
-        let unsubscribeLogs = null; // 歷史歷程即時監聽
+        let rtdb = null; // Realtime Database 實例
+        let firestoreDb = null; // Firestore Database 備用實例
         let activityLogsList = []; // 本地與雲端備份之日誌數組
 
         // ------------------------------------------------------------------
-        // 3. Firebase 雲端初始化與資料監聽
+        // 3. Firebase 雲端初始化 (自動相容 Realtime Database 與 Firestore)
         // ------------------------------------------------------------------
         function initFirebase() {
-            const savedConfigStr = localStorage.getItem('qp_firebase_config');
+            let savedConfigStr = localStorage.getItem('qp_firebase_config');
+            let configObj = null;
+
             if (savedConfigStr) {
                 try {
-                    const config = JSON.parse(savedConfigStr);
-                    if (!firebase.apps.length) {
-                        firebase.initializeApp(config);
-                    }
-                    db = firebase.firestore();
-                    updateCloudStatusUI(true);
-                    setupFirestoreListeners();
+                    configObj = JSON.parse(savedConfigStr);
                 } catch(e) {
-                    console.error("Firebase 初始化失敗：", e);
-                    updateCloudStatusUI(false);
+                    configObj = defaultFirebaseConfig;
                 }
             } else {
-                updateCloudStatusUI(false);
+                configObj = defaultFirebaseConfig;
+                localStorage.setItem('qp_firebase_config', JSON.stringify(defaultFirebaseConfig, null, 2));
+            }
+
+            try {
+                if (!firebase.apps.length) {
+                    firebase.initializeApp(configObj);
+                }
+                
+                // 優先使用 Realtime Database (免信用卡)
+                rtdb = firebase.database();
+                updateCloudStatusUI(true, "Realtime Database 即時連線中");
+                setupRealtimeDatabaseListeners();
+                
+            } catch(e) {
+                console.warn("Realtime Database 初始化失敗，試圖轉為 Firestore 相容模式...", e);
+                try {
+                    firestoreDb = firebase.firestore();
+                    updateCloudStatusUI(true, "Firestore 連線中");
+                    setupFirestoreListeners();
+                } catch(err2) {
+                    console.error("Firebase 所有連線方式均失敗：", err2);
+                    updateCloudStatusUI(false, "單機模式");
+                }
             }
         }
 
-        function updateCloudStatusUI(isOnline) {
+        function updateCloudStatusUI(isOnline, modeLabel = "") {
             const statusBadge = document.getElementById('cloudStatusBadge');
             const alertBox = document.getElementById('firebaseAlertBox');
             const alertText = document.getElementById('firebaseAlertText');
@@ -826,10 +860,10 @@
 
             if (isOnline) {
                 statusBadge.className = "text-[10px] px-2 py-0.5 rounded-full font-medium status-badge-online flex items-center gap-1";
-                statusBadge.innerHTML = '<i data-lucide="wifi" class="w-3 h-3"></i><span>qpreadingtips 雲端連線中</span>';
+                statusBadge.innerHTML = `<i data-lucide="wifi" class="w-3 h-3"></i><span>qpreadingtips (${modeLabel})</span>`;
                 if (alertBox) {
                     alertBox.className = "bg-emerald-50 border border-emerald-200 text-emerald-900 p-3.5 rounded-xl text-xs flex items-center justify-between gap-2";
-                    alertText.innerText = "已順利連線至 Firebase qpreadingtips！所有裝置之登入、登出與閱讀提示點閱紀錄均會即時同步。";
+                    alertText.innerText = `已成功連線至 qpreadingtips 雲端資料庫 (${modeLabel})！所有裝置之學生登入、登出與提示點閱紀錄均會即時同步。`;
                 }
                 if (btnPush) btnPush.classList.remove('hidden');
             } else {
@@ -844,12 +878,58 @@
             lucide.createIcons();
         }
 
+        // ------------------------------------------------------------------
+        // 3.1 Realtime Database 實時數據監聽器
+        // ------------------------------------------------------------------
+        function setupRealtimeDatabaseListeners() {
+            if (!rtdb) return;
+
+            // 監聽學生名單 node
+            rtdb.ref('students').on('value', (snapshot) => {
+                const val = snapshot.val();
+                if (val) {
+                    let cloudStudents = [];
+                    if (Array.isArray(val)) {
+                        cloudStudents = val.filter(item => item != null);
+                    } else if (typeof val === 'object') {
+                        cloudStudents = Object.values(val);
+                    }
+                    if (cloudStudents.length > 0) {
+                        localStorage.setItem('qp_reading_students', JSON.stringify(cloudStudents));
+                        if (currentUser) {
+                            updateUserUI();
+                        }
+                    }
+                }
+            }, (error) => console.error("RTDB 學生監聽錯誤：", error));
+
+            // 監聽歷程紀錄 node
+            rtdb.ref('activity_logs').limitToLast(500).on('value', (snapshot) => {
+                const val = snapshot.val();
+                if (val) {
+                    let cloudLogs = [];
+                    if (Array.isArray(val)) {
+                        cloudLogs = val.filter(item => item != null);
+                    } else if (typeof val === 'object') {
+                        cloudLogs = Object.values(val);
+                    }
+                    cloudLogs.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+                    activityLogsList = cloudLogs;
+                    localStorage.setItem('qp_activity_logs', JSON.stringify(cloudLogs));
+                    if (currentUser && currentUser.role === 'admin') {
+                        renderAdminLogTable();
+                    }
+                }
+            }, (error) => console.error("RTDB 歷程監聽錯誤：", error));
+        }
+
+        // ------------------------------------------------------------------
+        // 3.2 Firestore 備用實時數據監聽器
+        // ------------------------------------------------------------------
         function setupFirestoreListeners() {
-            if (!db) return;
+            if (!firestoreDb) return;
             
-            // 監聽學生資料集合
-            if (unsubscribeStudents) unsubscribeStudents();
-            unsubscribeStudents = db.collection('students').onSnapshot((snapshot) => {
+            firestoreDb.collection('students').onSnapshot((snapshot) => {
                 const cloudStudents = [];
                 snapshot.forEach(doc => {
                     cloudStudents.push({ id: doc.id, ...doc.data() });
@@ -863,9 +943,7 @@
                 }
             }, (error) => console.error("Firestore 學生資料監聽失敗：", error));
 
-            // 監聽歷史活動日誌集合
-            if (unsubscribeLogs) unsubscribeLogs();
-            unsubscribeLogs = db.collection('activity_logs').orderBy('timestamp', 'desc').limit(500).onSnapshot((snapshot) => {
+            firestoreDb.collection('activity_logs').orderBy('timestamp', 'desc').limit(500).onSnapshot((snapshot) => {
                 const cloudLogs = [];
                 snapshot.forEach(doc => {
                     cloudLogs.push({ id: doc.id, ...doc.data() });
@@ -879,7 +957,7 @@
         }
 
         // ------------------------------------------------------------------
-        // 4. 資料與日誌紀錄處理 (LocalStorage + Firestore)
+        // 4. 資料與日誌紀錄處理 (LocalStorage + Firebase RTDB / Firestore)
         // ------------------------------------------------------------------
         function getStudentsData() {
             const dataStr = localStorage.getItem('qp_reading_students');
@@ -897,18 +975,24 @@
         function saveStudentsData(students) {
             localStorage.setItem('qp_reading_students', JSON.stringify(students));
 
-            if (db) {
+            if (rtdb) {
+                rtdb.ref('students').set(students)
+                    .catch(err => console.error("同步至 RTDB 失敗:", err));
+            } else if (firestoreDb) {
                 students.forEach(student => {
-                    db.collection('students').doc(student.id).set(student, { merge: true })
-                        .catch(err => console.error("同步至 Firebase 失敗:", err));
+                    firestoreDb.collection('students').doc(student.id).set(student, { merge: true })
+                        .catch(err => console.error("同步至 Firestore 失敗:", err));
                 });
             }
         }
 
-        function deleteStudentFromFirestore(studentId) {
-            if (db) {
-                db.collection('students').doc(studentId).delete()
-                    .catch(err => console.error("從 Firebase 刪除學生失敗:", err));
+        function deleteStudentFromCloud(studentId) {
+            if (rtdb) {
+                const students = getStudentsData();
+                rtdb.ref('students').set(students);
+            } else if (firestoreDb) {
+                firestoreDb.collection('students').doc(studentId).delete()
+                    .catch(err => console.error("從 Firestore 刪除學生失敗:", err));
             }
         }
 
@@ -960,20 +1044,27 @@
             localStorage.setItem('qp_activity_logs', JSON.stringify(localLogs));
             activityLogsList = localLogs;
 
-            // 寫入 Firebase Firestore
-            if (db) {
-                db.collection('activity_logs').doc(logEntry.id).set(logEntry)
-                    .catch(err => console.error("日誌寫入 Firebase 失敗:", err));
+            // 寫入 Firebase
+            if (rtdb) {
+                rtdb.ref('activity_logs/' + logEntry.id).set(logEntry)
+                    .catch(err => console.error("日誌寫入 RTDB 失敗:", err));
+            } else if (firestoreDb) {
+                firestoreDb.collection('activity_logs').doc(logEntry.id).set(logEntry)
+                    .catch(err => console.error("日誌寫入 Firestore 失敗:", err));
             }
         }
 
         function syncLocalToFirebase() {
-            if (!db) return alert('未連線至 Firebase！');
+            if (!rtdb && !firestoreDb) return alert('未連線至 Firebase！');
             const students = getStudentsData();
             if (confirm(`確定要把本機的 ${students.length} 位學生資料全部覆蓋上傳至 Firebase 雲端嗎？`)) {
-                students.forEach(s => {
-                    db.collection('students').doc(s.id).set(s);
-                });
+                if (rtdb) {
+                    rtdb.ref('students').set(students);
+                } else if (firestoreDb) {
+                    students.forEach(s => {
+                        firestoreDb.collection('students').doc(s.id).set(s);
+                    });
+                }
                 alert('已將本機資料全面同步至 Firebase 雲端！');
             }
         }
@@ -1222,7 +1313,7 @@
                 closeConfirmModal();
                 updateUserUI(); // 刷新 UI
 
-                // 立即開啟提示視窗
+                // 獨立跳出提示視窗
                 openHintModal(selectedArticleForUnlock);
             }
         }
@@ -1434,8 +1525,10 @@
             if (confirm('確定要清除所有的歷史紀錄嗎？（本地與雲端記錄均將重置）')) {
                 activityLogsList = [];
                 localStorage.removeItem('qp_activity_logs');
-                if (db) {
-                    db.collection('activity_logs').get().then(snapshot => {
+                if (rtdb) {
+                    rtdb.ref('activity_logs').remove();
+                } else if (firestoreDb) {
+                    firestoreDb.collection('activity_logs').get().then(snapshot => {
                         snapshot.forEach(doc => doc.ref.delete());
                     });
                 }
@@ -1530,7 +1623,7 @@
                 let students = getStudentsData();
                 students = students.filter(s => s.id !== studentId);
                 saveStudentsData(students);
-                deleteStudentFromFirestore(studentId);
+                deleteStudentFromCloud(studentId);
                 renderAdminStudentTable();
             }
         }
@@ -1539,7 +1632,7 @@
         // 8. Firebase 雲端連線設定與 JSON 備份
         // ------------------------------------------------------------------
         function openFirebaseConfigModal() {
-            const savedConfigStr = localStorage.getItem('qp_firebase_config') || '';
+            const savedConfigStr = localStorage.getItem('qp_firebase_config') || JSON.stringify(defaultFirebaseConfig, null, 2);
             document.getElementById('firebaseConfigTextarea').value = savedConfigStr;
             document.getElementById('firebaseConfigModal').classList.remove('hidden');
         }
@@ -1553,7 +1646,8 @@
 
             if (!configText) {
                 localStorage.removeItem('qp_firebase_config');
-                db = null;
+                rtdb = null;
+                firestoreDb = null;
                 updateCloudStatusUI(false);
                 alert('已移除 Firebase 雲端設定，系統恢復為離線單機模式！');
                 closeFirebaseConfigModal();
@@ -1565,7 +1659,7 @@
                 if (!configObj.apiKey || !configObj.projectId) {
                     throw new Error("缺少 apiKey 或 projectId");
                 }
-                localStorage.setItem('qp_firebase_config', JSON.stringify(configObj));
+                localStorage.setItem('qp_firebase_config', JSON.stringify(configObj, null, 2));
                 initFirebase();
                 alert('qpreadingtips Firebase 雲端連線設定成功！所有學生活動日誌已開啟跨裝置即時監控。');
                 closeFirebaseConfigModal();
